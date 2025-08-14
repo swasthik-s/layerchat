@@ -1,5 +1,3 @@
-"use client"
-
 import React, { useState } from 'react'
 import { ChatMessage as ChatMessageType } from '@/types'
 import { User, Bot, Search, Calculator, Youtube, Cloud, Copy, Edit, ThumbsUp, Volume2, Share,ThumbsDown, RefreshCw, Loader } from 'lucide-react'
@@ -8,8 +6,13 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useChatStore } from '@/lib/store'
 import { useStreamingChat } from '@/hooks/useStreamingChat'
 import TextRender from '../TextRender'
+import SearchStatus from '../SearchStatus'
 
-interface ChatMessageProps { message: ChatMessageType }
+interface ChatMessageProps { 
+  message: ChatMessageType
+  searchPhase?: { phase: 'searching' | 'complete'; searchQuery?: string } | null
+  isStreamingMessage?: boolean
+}
 
 const ActionButtons = ({ message }: { message: ChatMessageType }) => {
   const [copied, setCopied] = useState(false)
@@ -44,7 +47,7 @@ const ActionButtons = ({ message }: { message: ChatMessageType }) => {
   )
 }
 
-export default function ChatMessage({ message }: ChatMessageProps) {
+export default function ChatMessage({ message, searchPhase, isStreamingMessage }: ChatMessageProps) {
   const [imageError, setImageError] = useState(false)
   const [copied, setCopied] = useState(false)
   const { isStreaming, streamingMessageId } = useStreamingChat()
@@ -133,9 +136,22 @@ export default function ChatMessage({ message }: ChatMessageProps) {
 
   return (
   <div className={`flex py-4 ${isUser ? 'justify-end' : 'justify-start'} group`} data-message-id={message.id}>
-      {!isUser && <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center bg-muted text-muted-foreground mr-2 sm:mr-3">{agentIcon(message.metadata?.agent)}</div>}
+      {!isUser && (
+        <div className="flex items-start gap-0">
+          <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center bg-muted text-muted-foreground mr-2 sm:mr-3">
+            {agentIcon(message.metadata?.agent)}
+          </div>
+          {/* Show search status inline with avatar for streaming search messages */}
+          {!isUser && isStreamingMessage && searchPhase && searchPhase.phase === 'searching' && (
+            <SearchStatus 
+              phase={searchPhase.phase} 
+              searchQuery={searchPhase.searchQuery}
+            />
+          )}
+        </div>
+      )}
   {/* Remove artificial max-width for assistant messages; keep reasonable limit for user bubbles */}
-  <div className={`${isUser ? 'max-w-[70%] order-1' : 'w-full order-2'} max-w-full`}> 
+  <div className={`${isUser ? 'max-w-[70%] order-1' : 'w-full order-2'} max-w-full mt-1`}> 
         {isUser ? (
           <div className="flex items-end gap-2">
             <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center gap-1 mb-2">
@@ -170,6 +186,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
                         content={cleanedContent} 
                         isStreaming={isCurrentlyStreaming || message.metadata?.streaming || false}
                         useTypewriter={true}
+                        isSearching={searchPhase?.phase === 'searching'}
                       />
                     </div>
                     })()

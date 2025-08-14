@@ -16,6 +16,7 @@ export interface TextRenderProps {
   className?: string;
   isStreaming?: boolean;
   useTypewriter?: boolean;
+  isSearching?: boolean; // Add this to hide dot during search
 }
 
 // Auto-detect math patterns in AI responses
@@ -300,7 +301,7 @@ function wrapLists(html: string): string {
     });
 }
 
-export default function TextRender({ content, className = "", isStreaming = false, useTypewriter = false }: TextRenderProps) {
+export default function TextRender({ content, className = "", isStreaming = false, useTypewriter = false, isSearching = false }: TextRenderProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const lastProcessedContentRef = useRef<string>('');
   const lastProcessedResultRef = useRef<string>('');
@@ -417,7 +418,7 @@ export default function TextRender({ content, className = "", isStreaming = fals
     });
   }, [processedContent]);
   
-  // During streaming, show raw content immediately with unified dot cursor
+  // During streaming, show raw content immediately with unified dot cursor (hide dot during search)
   if (isStreaming && useTypewriter) {
     return (
       <div 
@@ -426,14 +427,17 @@ export default function TextRender({ content, className = "", isStreaming = fals
       >
         <div className="inline-block">
           <span className="whitespace-pre-wrap">{content}</span>
-          <span
-            className="unified-dot streaming"
-            style={{
-              verticalAlign: "middle",
-              marginLeft: "2px",
-              marginBottom: "2px"
-            }}
-          />
+          {/* Only show streaming dot when not searching */}
+          {!isSearching && (
+            <span
+              className="unified-dot streaming"
+              style={{
+                verticalAlign: "middle",
+                marginLeft: "2px",
+                marginBottom: "2px"
+              }}
+            />
+          )}
         </div>
       </div>
     );

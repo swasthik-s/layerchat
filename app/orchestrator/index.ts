@@ -229,43 +229,98 @@ export class Orchestrator {
     }
 
     if (agentToUse) {
-      // Run agent first, then stream model response
-      const agentResponse = await agentToUse.run(message.content)
-      const enrichedPrompt = this.buildEnrichedPrompt(message.content, agentResponse)
-      // Prepend style instructions so streaming models (Mistral, Google) follow same formatting as non-streaming
-      const styleHeader = this.buildStylePrompt(message.content)
-      const styledEnrichedPrompt = `${styleHeader}\n\n${enrichedPrompt}`
-      
-      // Check if model supports streaming
-      if (typeof (model as any).generateStream === 'function') {
-        const dualPrompts = this.buildSystemUserPrompts(message.content, { dual: true })
-        dualPrompts.user = enrichedPrompt
-        const stream = await (model as any).generateStream(dualPrompts, options)
-        return {
-          stream,
-          metadata: {
-            model: model.name,
-            agent: agentToUse.name,
-            agentData: agentResponse.data
+      // Create a custom stream for search phases
+      const orchestrator = this // Reference to the orchestrator instance
+      const searchStream = new ReadableStream({
+        async start(controller) {
+          try {
+            // Phase: Searching Web & Processing Data
+            if (agentToUse.name === 'Internet Search') {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({ 
+                    type: 'search_phase',
+                    phase: 'searching'
+                  })}\n\n`
+                )
+              )
+              
+              // Add a delay to show the search animation
+              await new Promise(resolve => setTimeout(resolve, 1500))
+            }
+
+            // Run agent
+            const agentResponse = await agentToUse.run(message.content)
+            
+            // Mark search complete (for search agents)
+            if (agentToUse.name === 'Internet Search') {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({ 
+                    type: 'search_phase',
+                    phase: 'complete'
+                  })}\n\n`
+                )
+              )
+            }
+
+            const enrichedPrompt = orchestrator.buildEnrichedPrompt(message.content, agentResponse)
+            
+            // Check if model supports streaming
+            if (typeof (model as any).generateStream === 'function') {
+              const dualPrompts = orchestrator.buildSystemUserPrompts(message.content, { dual: true })
+              dualPrompts.user = enrichedPrompt
+              const stream = await (model as any).generateStream(dualPrompts, options)
+              
+              // Pipe the model stream to our custom stream
+              const reader = stream.getReader()
+              while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+                controller.enqueue(value)
+              }
+              
+              controller.close()
+            } else {
+              // Non-streaming model fallback
+              const dualPrompts = orchestrator.buildSystemUserPrompts(message.content, { dual: true })
+              dualPrompts.user = enrichedPrompt
+              const modelResponse = await (model as any).generate(dualPrompts, options)
+              
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({ 
+                    type: 'content',
+                    content: modelResponse.content,
+                    metadata: {
+                      model: model.name,
+                      agent: agentToUse.name,
+                      agentData: agentResponse.data
+                    }
+                  })}\n\n`
+                )
+              )
+              
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({ type: 'done' })}\n\n`
+                )
+              )
+              
+              controller.close()
+            }
+            
+          } catch (error) {
+            controller.error(error)
           }
         }
-      } else {
-        const dualPrompts = this.buildSystemUserPrompts(message.content, { dual: true })
-        dualPrompts.user = enrichedPrompt
-        const modelResponse = await model.generate(dualPrompts, options)
-        const split = this.splitDualResponse(modelResponse.content as string)
-        const enhanced = this.autoMathifyOutput(split.full)
-        return {
-          content: enhanced,
-          metadata: {
-            model: model.name,
-            agent: agentToUse.name,
-            tokens: modelResponse.metadata?.tokens,
-            agentData: agentResponse.data,
-            concise: split.concise,
-            full: enhanced,
-            explanationAvailable: !!split.concise && split.full !== split.concise
-          }
+      })
+
+      return {
+        stream: searchStream,
+        metadata: {
+          model: model.name,
+          agent: agentToUse.name
         }
       }
     } else {
@@ -572,13 +627,18 @@ CURRENT SEARCH RESULTS:\n\n`
     }
 
     prompt += `INSTRUCTIONS:
-- Use the above current, real-time data to answer the user's question
+- ANALYZE and REASON about the search data before presenting your answer
+- Use the above current, real-time data to provide a well-structured, thoughtful response
+- Don't just copy-paste from search results - SYNTHESIZE the information intelligently
 - Be specific and include actual numbers, prices, dates, or facts from the search results
 - DO NOT say you don't have access to real-time information - you DO have it above
-- Present the information naturally and conversationally
-- Include relevant details from the search results
-- If the data includes prices, mention the current value
-- Always provide a complete, helpful answer based on the search data
+- Explain WHY the information is relevant and HOW it answers the user's question
+- Present the information naturally and conversationally with proper context
+- Include relevant details from the search results but explain their significance
+- If the data includes prices, mention the current value and any trends if apparent
+- If multiple sources provide different information, acknowledge and explain the differences
+- Always provide a complete, helpful answer that demonstrates understanding of the search data
+- Structure your response logically: context → key findings → implications → conclusion
 
 Search was performed on: ${new Date().toLocaleString()}
 Data source: Real-time internet search via ${agentResponse.metadata?.source || 'search API'}`

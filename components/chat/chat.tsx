@@ -10,7 +10,7 @@ import { Square } from 'lucide-react'
 
 export default function Chat() {
   const { messages, isLoading, currentSession } = useChatStore()
-  const { sendMessage, stopGeneration, isStreaming } = useStreamingChat()
+  const { sendMessage, stopGeneration, isStreaming, searchPhase, streamingMessageId } = useStreamingChat()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -58,7 +58,12 @@ export default function Chat() {
           )}
 
           {messages.map((message) => (
-            <ChatMessage key={message.id} message={message} />
+            <ChatMessage 
+              key={message.id} 
+              message={message} 
+              searchPhase={searchPhase}
+              isStreamingMessage={message.id === streamingMessageId}
+            />
           ))}
 
           {/* Extra padding at bottom to ensure messages don't go behind input */}

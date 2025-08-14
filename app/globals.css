@@ -33,6 +33,30 @@
   }
 }
 
+/* White Spotlight Animation for Web Search */
+.search-gradient-text {
+  color: transparent;
+  background-image: linear-gradient(90deg, 
+    rgba(255, 255, 255, 0.3) 0%, 
+    rgba(255, 255, 255, 0.7) 25%, 
+    rgba(255, 255, 255, 1) 50%, 
+    rgba(255, 255, 255, 0.7) 75%, 
+    rgba(255, 255, 255, 0.3) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  background-size: 200%;
+  background-position: -200%;
+  animation: white-spotlight 2s infinite alternate-reverse;
+  font-weight: 500;
+}
+
+@keyframes white-spotlight {
+  to {
+    background-position: 200%;
+  }
+}
+
 /* Enhanced KaTeX integration for both light and dark themes */
 .katex {
   color: inherit !important;

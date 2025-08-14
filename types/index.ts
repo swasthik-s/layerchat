@@ -52,9 +52,23 @@ export interface ChatMessage {
     model?: string
     agent?: string
     tokens?: number
-  concise?: string // short direct answer extracted
-  full?: string // full explanation text
-  explanationAvailable?: boolean
+    // Legacy dual-response support (deprecated)
+    concise?: string // short direct answer extracted
+    full?: string // full explanation text
+    explanationAvailable?: boolean
+    // New intelligent response modes
+    responseMode?: 'explanatory' | 'formal' | 'concise'
+    outputMode?: string // For backward compatibility
+    hasStructuredContent?: boolean
+    richPreferred?: boolean
+    streaming?: boolean
+    completed?: boolean
+    variant?: 'add-details' | 'more-concise'
+    showExplanation?: boolean
+    confidence?: number
+    segmentType?: string
+    error?: boolean
+    stopped?: boolean
     [key: string]: any
   }
   attachments?: MessageAttachment[]

@@ -29,42 +29,44 @@ function normalizeInlineMathArtifacts(s: string): string {
     .replace(/\$(\s+)([^$\n]+?)\$/g,'$ $2$') // trim leading spaces inside inline
 }
 
-// Function to parse dual-output tags (now tolerant of only one present)
-function splitDualResponse(raw: string): { concise: string | null; explanation: string | null; hasExplanation: boolean; cleanedContent: string } {
-  if (!raw) return { concise: null, explanation: null, hasExplanation: false, cleanedContent: '' }
+// Function to parse intelligent response modes (replaces dual-output tags)
+function parseIntelligentResponse(raw: string): { 
+  mode: 'explanatory' | 'formal' | 'concise'; 
+  content: string; 
+  hasStructuredContent: boolean;
+  cleanedContent: string 
+} {
+  if (!raw) return { mode: 'concise', content: '', hasStructuredContent: false, cleanedContent: '' }
 
-  const conciseMatch = raw.match(/<CONCISE>([\s\S]*?)<\/CONCISE>/i)
-  const explMatch = raw.match(/<EXPLANATION>([\s\S]*?)<\/EXPLANATION>/i)
+  // Detect mode based on content characteristics
+  const lowerContent = raw.toLowerCase()
+  const hasTeachingLanguage = /think of|imagine|like a|similar to|let me explain|here's how|step by step|stage \d+|at its core/.test(lowerContent)
+  const hasBusinessLanguage = /executive summary|key considerations|critical success factors|strategic|stakeholder|implementation|roi|kpi/.test(lowerContent)
+  const hasStructuredSections = /\*\*[^*]+\*\*|## |### |#### /.test(raw)
+  const hasSteps = /\d+\.\s|\*\*Stage \d+|\*\*Step \d+/.test(raw)
+  const isShortAnswer = raw.trim().split('\n').length <= 3 && raw.length < 200
 
-  // Both sections present
-  if (conciseMatch && explMatch) {
-    const cleanedContent = raw
-      .replace(/<CONCISE>[\s\S]*?<\/CONCISE>/i, '')
-      .replace(/<EXPLANATION>[\s\S]*?<\/EXPLANATION>/i, '')
-      .trim()
-    return {
-      concise: conciseMatch[1].trim(),
-      explanation: explMatch[1].trim(),
-      hasExplanation: true,
-      cleanedContent: explMatch[1].trim()
-    }
+  let mode: 'explanatory' | 'formal' | 'concise' = 'concise'
+  
+  if (hasBusinessLanguage || (hasStructuredSections && !hasTeachingLanguage)) {
+    mode = 'formal'
+  } else if (hasTeachingLanguage || hasSteps || raw.length > 500) {
+    mode = 'explanatory'  
+  } else if (isShortAnswer || lowerContent.startsWith('use ') || lowerContent.includes('quick')) {
+    mode = 'concise'
+  } else {
+    // Default based on length and complexity
+    mode = raw.length > 300 ? 'explanatory' : 'concise'
   }
 
-  // Only concise present
-  if (conciseMatch && !explMatch) {
-    const concise = conciseMatch[1].trim()
-    const cleaned = raw.replace(/<CONCISE>[\s\S]*?<\/CONCISE>/i, '').replace(/<\/?:?(CONCISE|EXPLANATION)>/gi,'').trim()
-    return { concise, explanation: null, hasExplanation: false, cleanedContent: concise || cleaned }
+  const hasStructuredContent = hasStructuredSections || hasSteps || mode !== 'concise'
+  
+  return { 
+    mode, 
+    content: raw, 
+    hasStructuredContent,
+    cleanedContent: raw.trim()
   }
-  // Only explanation present
-  if (explMatch && !conciseMatch) {
-    const explanation = explMatch[1].trim()
-    const cleaned = raw.replace(/<EXPLANATION>[\s\S]*?<\/EXPLANATION>/i, '').replace(/<\/?:?(CONCISE|EXPLANATION)>/gi,'').trim()
-    return { concise: null, explanation, hasExplanation: true, cleanedContent: explanation || cleaned }
-  }
-
-  // No tags
-  return { concise: null, explanation: null, hasExplanation: false, cleanedContent: raw }
 }
 
 interface UseStreamingChatOptions {
@@ -88,6 +90,7 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
   } = useChatStore()
 
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
+  const [searchPhase, setSearchPhase] = useState<{ phase: 'searching' | 'complete', searchQuery?: string } | null>(null)
   // Accumulate raw streaming text; finalize with formatMessage when done
   const rawBufferRef = useRef<string>('')
   // Track last formatted length to throttle incremental formatting
@@ -193,17 +196,17 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
                   messageMetadata = { ...messageMetadata, confidence: result.confidence, segmentType: result.type }
                 }
               } catch {}
-              const split = splitDualResponse(finalContent)
+              const parsed = parseIntelligentResponse(finalContent)
               // Infer mode
-              let inferredMode: string = messageMetadata.outputMode || 'DUAL'
-              if (split.concise && split.explanation) inferredMode = 'DUAL'
-              else if (split.explanation && !split.concise) inferredMode = 'EXPLANATION_ONLY'
-              else if (split.concise && !split.explanation) inferredMode = 'CONCISE_ONLY'
-              else if (/Step\s+1:|Final Answer:|✅ Final Answer:/i.test(finalContent)) inferredMode = 'EXPLANATION_ONLY'
+              let inferredMode: string = messageMetadata.outputMode || parsed.mode.toUpperCase()
+              if (parsed.mode === 'explanatory') inferredMode = 'EXPLANATORY'
+              else if (parsed.mode === 'formal') inferredMode = 'FORMAL'  
+              else if (parsed.mode === 'concise') inferredMode = 'CONCISE'
+              else if (/Step\s+1:|Final Answer:|✅ Final Answer:/i.test(finalContent)) inferredMode = 'EXPLANATORY'
               const showContent = (mode === 'add-details'
-                ? (split.explanation || split.cleanedContent || finalContent)
-                : (split.concise || split.cleanedContent || finalContent)
-              ).replace(/<\/?(CONCISE|EXPLANATION)>/gi,'')
+                ? parsed.cleanedContent
+                : parsed.cleanedContent
+              )
               rawBufferRef.current = ''
               lastFormatLenRef.current = 0
               updateMessage(assistantMessageId, {
@@ -213,10 +216,9 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
                   streaming: false,
                   completed: true,
                   outputMode: inferredMode,
-                  concise: split.concise || undefined,
-                  explanation: split.explanation || undefined,
-                  explanationAvailable: !!split.explanation,
-                  showExplanation: mode === 'add-details' && !!split.explanation,
+                  responseMode: parsed.mode,
+                  hasStructuredContent: parsed.hasStructuredContent,
+                  showExplanation: mode === 'add-details' && parsed.hasStructuredContent,
                   variant: mode
                 }
               })
@@ -341,13 +343,20 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
               case 'start':
                 messageMetadata = { ...messageMetadata, model: data.model }
                 break
+              case 'search_phase':
+                setSearchPhase({ phase: data.phase, searchQuery: data.searchQuery })
+                break
               case 'content':
                 if (!data.content) break
                 rawBufferRef.current += data.content
                 accumulatedContent = rawBufferRef.current
-                const mode = data.metadata?.outputMode || messageMetadata?.outputMode || 'DUAL'
+                const mode = data.metadata?.outputMode || messageMetadata?.outputMode || 'AUTO'
                 let displayPortion = accumulatedContent
-                if (mode === 'CONCISE_ONLY' || mode === 'DUAL') {
+                // For new intelligent modes, show content as-is during streaming
+                if (mode === 'CONCISE' || mode === 'FORMAL' || mode === 'EXPLANATORY' || mode === 'AUTO') {
+                  displayPortion = accumulatedContent
+                } else if (mode === 'CONCISE_ONLY' || mode === 'DUAL') {
+                  // Legacy dual-tag support for backward compatibility
                   const o = accumulatedContent.search(/<CONCISE>/i)
                   const c = accumulatedContent.search(/<\/CONCISE>/i)
                   if (o >= 0) displayPortion = c > o ? accumulatedContent.substring(o + 9, c) : accumulatedContent.substring(o + 9)
@@ -382,62 +391,38 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
                     messageMetadata = { ...messageMetadata, confidence: result.confidence, segmentType: result.type }
                   }
                 } catch {}
-                const modeFinal = messageMetadata?.outputMode || 'DUAL'
-                let concise: string | null = null
-                let explanation: string | null = null
-                let explanationAvailable = false
+                const modeFinal = messageMetadata?.outputMode || 'AUTO'
+                let responseMode: 'explanatory' | 'formal' | 'concise' = 'concise'
+                let hasStructuredContent = false
                 let initialContent = finalContent
-                const split = splitDualResponse(finalContent)
+                const parsed = parseIntelligentResponse(finalContent)
+                responseMode = parsed.mode
+                hasStructuredContent = parsed.hasStructuredContent
+                
                 // Final rich indicators (steps, math, final answer, lists)
                 const finalRich = /\$\$|\$[^$\n]+\$|\\\(|\\\)|Step\s+1:|Final Answer:|^\d+\.\s|✅/m.test(finalContent)
                 
                 // DEBUG: Log content analysis
                 console.log('🔍 Content analysis for final update:', {
                   modeFinal,
+                  responseMode,
                   finalContentLength: finalContent.length,
-                  splitResult: split,
+                  hasStructuredContent,
                   finalRich,
                   contentPreview: finalContent.substring(0, 200)
                 });
                 
-                if (modeFinal === 'DUAL') {
-                  concise = split.concise
-                  explanation = split.explanation
-                  explanationAvailable = !!split.explanation
-                  
-                  // CRITICAL FIX: For Add Details mode, if no explicit explanation tags but content looks rich,
-                  // treat the entire content as explanation to preserve TipTap formatting
-                  if (!split.explanation && (finalRich || finalContent.length > 100 || messageMetadata?.variant === 'add-details')) {
-                    explanation = finalContent
-                    explanationAvailable = true
-                    initialContent = finalContent
-                    console.log('🔧 Treating full content as explanation for rich formatting preservation');
-                  } else if (split.explanation) {
-                    initialContent = split.explanation.replace(/<\/?(CONCISE|EXPLANATION)>/gi,'')
-                  } else {
-                    initialContent = (split.concise || split.cleanedContent).replace(/<\/?(CONCISE|EXPLANATION)>/gi,'')
-                  }
-                } else if (modeFinal === 'CONCISE_ONLY') {
-                  concise = split.concise || split.cleanedContent
-                  initialContent = (concise || '').replace(/<\/?(CONCISE|EXPLANATION)>/gi,'')
-                } else if (modeFinal === 'EXPLANATION_ONLY') {
-                  if (split.explanation) {
-                    initialContent = split.explanation
-                    explanation = split.explanation
-                  } else {
-                    initialContent = finalContent.replace(/<CONCISE>[\s\S]*?<\/CONCISE>/ig,'').replace(/<EXPLANATION>|<\/EXPLANATION>/ig,'').trim()
-                  }
-                  initialContent = initialContent.replace(/<\/?(CONCISE|EXPLANATION)>/gi,'')
-                }
+                initialContent = parsed.cleanedContent
                 rawBufferRef.current = ''
                 lastFormatLenRef.current = 0
+                setSearchPhase(null) // Clear search phase when done
                 
                 // DEBUG: Log final message update
                 console.log('🎯 Final message update:', {
                   messageId: assistantMessageId,
                   contentLength: initialContent.length,
-                  outputMode: modeFinal,
-                  explanationAvailable,
+                  responseMode,
+                  hasStructuredContent,
                   richPreferred: (messageMetadata as any)?.richPreferred || finalRich,
                   finalRich,
                   hasSteps: /Step\s+1:|^\d+\.\s/.test(initialContent),
@@ -447,20 +432,19 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
                 
                 // Ensure richPreferred is preserved for complex content
                 const shouldPreferRich = (messageMetadata as any)?.richPreferred || finalRich || 
-                                       (modeFinal === 'DUAL' && explanationAvailable) ||
+                                       hasStructuredContent ||
                                        messageMetadata?.variant === 'add-details';
                 
                 updateMessage(assistantMessageId, { 
                   content: initialContent, 
                   metadata: { 
                     ...messageMetadata, 
-                    outputMode: modeFinal, 
+                    outputMode: responseMode.toUpperCase(), 
+                    responseMode,
                     streaming: false, 
                     completed: true, 
-                    concise: concise || undefined, 
-                    explanation: explanation || undefined, 
-                    explanationAvailable, 
-                    showExplanation: modeFinal === 'DUAL', 
+                    hasStructuredContent,
+                    showExplanation: responseMode === 'explanatory' || responseMode === 'formal', 
                     richPreferred: shouldPreferRich 
                   } 
                 })
@@ -526,5 +510,6 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
     stopGeneration,
     isStreaming: streamingMessageId !== null,
     streamingMessageId,
+    searchPhase,
   }
 }

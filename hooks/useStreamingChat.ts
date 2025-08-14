@@ -1,0 +1,530 @@
+import { useState, useCallback, useRef } from 'react'
+import { ChatMessage } from '@/types'
+import { useChatStore } from '@/lib/store'
+import toast from 'react-hot-toast'
+// Legacy StreamingFormattingEngine removed; use new segment-based formatter
+// Lightweight inline formatting helpers (newFormatter removed)
+// Basic cleanup: collapse >2 blank lines, trim, fix simple math spacing
+function basicFormat(content: string): { content: string; confidence: number; type: string } {
+  if (!content) return { content: '', confidence: 0, type: 'text' }
+  let out = content
+    .replace(/\r\n?/g,'\n')
+    .replace(/\n{3,}/g,'\n\n')
+    .replace(/(^|[^$])(\d)\$(?=[^$]+?\$)/g,'$1$2 $') // 1$ x $ -> 1 $ x $
+    .replace(/ +$/gm,'')
+    .trim()
+  // Simple heuristic: if we have steps or final answer or math -> explanation
+  const hasSteps = /Step\s+1:|^\d+\.\s/m.test(out)
+  const hasMath = /\$\$|\$[^$\n]+\$/m.test(out)
+  const hasFinal = /Final Answer:/i.test(out)
+  const type = (hasSteps || hasMath || hasFinal) ? 'explanation' : 'text'
+  const confidence = (hasMath ? 0.9 : 0.6) + (hasSteps?0.05:0) + (hasFinal?0.05:0)
+  return { content: out, confidence: Math.min(confidence,1), type }
+}
+
+// Minimal math artifact cleaners formerly in BasicPostProcessors
+function normalizeInlineMathArtifacts(s: string): string {
+  return s
+    .replace(/\$\$([ \t]*?)\$/g,'$$$1') // stray single $ near $$
+    .replace(/\$(\s+)([^$\n]+?)\$/g,'$ $2$') // trim leading spaces inside inline
+}
+
+// Function to parse dual-output tags (now tolerant of only one present)
+function splitDualResponse(raw: string): { concise: string | null; explanation: string | null; hasExplanation: boolean; cleanedContent: string } {
+  if (!raw) return { concise: null, explanation: null, hasExplanation: false, cleanedContent: '' }
+
+  const conciseMatch = raw.match(/<CONCISE>([\s\S]*?)<\/CONCISE>/i)
+  const explMatch = raw.match(/<EXPLANATION>([\s\S]*?)<\/EXPLANATION>/i)
+
+  // Both sections present
+  if (conciseMatch && explMatch) {
+    const cleanedContent = raw
+      .replace(/<CONCISE>[\s\S]*?<\/CONCISE>/i, '')
+      .replace(/<EXPLANATION>[\s\S]*?<\/EXPLANATION>/i, '')
+      .trim()
+    return {
+      concise: conciseMatch[1].trim(),
+      explanation: explMatch[1].trim(),
+      hasExplanation: true,
+      cleanedContent: explMatch[1].trim()
+    }
+  }
+
+  // Only concise present
+  if (conciseMatch && !explMatch) {
+    const concise = conciseMatch[1].trim()
+    const cleaned = raw.replace(/<CONCISE>[\s\S]*?<\/CONCISE>/i, '').replace(/<\/?:?(CONCISE|EXPLANATION)>/gi,'').trim()
+    return { concise, explanation: null, hasExplanation: false, cleanedContent: concise || cleaned }
+  }
+  // Only explanation present
+  if (explMatch && !conciseMatch) {
+    const explanation = explMatch[1].trim()
+    const cleaned = raw.replace(/<EXPLANATION>[\s\S]*?<\/EXPLANATION>/i, '').replace(/<\/?:?(CONCISE|EXPLANATION)>/gi,'').trim()
+    return { concise: null, explanation, hasExplanation: true, cleanedContent: explanation || cleaned }
+  }
+
+  // No tags
+  return { concise: null, explanation: null, hasExplanation: false, cleanedContent: raw }
+}
+
+interface UseStreamingChatOptions {
+  apiEndpoint?: string
+  enableStreaming?: boolean
+}
+
+export function useStreamingChat(options: UseStreamingChatOptions = {}) {
+  const {
+    apiEndpoint = '/api/chat/stream',
+    enableStreaming = true,
+  } = options
+
+  const { 
+    addMessage, 
+    updateMessage, 
+    setLoading, 
+    selectedModel, 
+    settings,
+    currentSession 
+  } = useChatStore()
+
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
+  // Accumulate raw streaming text; finalize with formatMessage when done
+  const rawBufferRef = useRef<string>('')
+  // Track last formatted length to throttle incremental formatting
+  const lastFormatLenRef = useRef<number>(0)
+
+  const regenerateMessage = useCallback(async (assistantMessageId: string, mode: 'add-details' | 'more-concise') => {
+    const { messages } = useChatStore.getState()
+    const target = messages.find(m => m.id === assistantMessageId && m.role === 'assistant')
+    if (!target) return
+    // Find previous user prompt
+    const idx = messages.findIndex(m => m.id === assistantMessageId)
+    let userPrompt = ''
+    for (let i = idx - 1; i >= 0; i--) { if (messages[i].role === 'user') { userPrompt = messages[i].content; break } }
+    if (!userPrompt) return
+
+    // Always regenerate via backend for add-details to ensure fresh, smooth streaming (no local toggle)
+
+    // Variant instruction (regeneration path)
+    const instruction = mode === 'add-details'
+    ? 'Regenerate with a richly detailed, well-structured explanation: numbered steps when helpful, brief rationale, properly formatted LaTeX for ALL math, and a **Final Answer: ...** line. Do NOT restate the question verbatim at the start. If you previously used dual sections you may keep <CONCISE> and <EXPLANATION> tags; otherwise just produce the detailed answer.'
+      : 'Answer with the most concise single sentence or expression giving ONLY the final result in bold, then optionally append: "Want a breakdown?". No steps, no extra commentary.'
+
+    const augmentedPrompt = `${userPrompt}\n\nVARIANT_MODE: ${mode}\n${instruction}`
+
+    // Mark existing assistant message as streaming
+    updateMessage(assistantMessageId, { content: '', metadata: { ...target.metadata, streaming: true, variant: mode } })
+    setLoading(true)
+    setStreamingMessageId(assistantMessageId)
+    rawBufferRef.current = ''
+    lastFormatLenRef.current = 0
+
+  try {
+      const response = await fetch(apiEndpoint, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: { id: `regen-user-${Date.now()}`, role: 'user', content: augmentedPrompt, type: 'text', timestamp: Date.now() },
+      // Lock to original model if present to avoid provider switching surprise
+      model: (target.metadata?.model) || selectedModel,
+          settings: {
+            temperature: settings.temperature,
+            maxTokens: settings.maxTokens,
+            enableAutoAgents: settings.enableAutoAgents,
+            governance: settings.governance || { mode: 'smart', enabled: true },
+          },
+          sessionId: currentSession?.id,
+        })
+      })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const reader = response.body?.getReader(); if (!reader) throw new Error('No reader')
+      let accumulatedContent = ''
+      let messageMetadata = { ...target.metadata }
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break
+        const chunk = new TextDecoder().decode(value)
+        const lines = chunk.split('\n')
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(line.slice(6))
+            if (data.type === 'start') {
+              messageMetadata = { ...messageMetadata, model: data.model, outputMode: data.metadata?.outputMode || messageMetadata.outputMode }
+            } else if (data.type === 'content' && data.content) {
+              rawBufferRef.current += data.content
+              accumulatedContent = rawBufferRef.current
+                // Streaming display logic depends on variant mode
+                let displayPortion = accumulatedContent
+                if (mode === 'more-concise') {
+                  const conciseOpenIdx = accumulatedContent.search(/<CONCISE>/i)
+                  const conciseCloseIdx = accumulatedContent.search(/<\/CONCISE>/i)
+                  if (conciseOpenIdx >= 0) {
+                    if (conciseCloseIdx > conciseOpenIdx) {
+                      displayPortion = accumulatedContent.substring(conciseOpenIdx + 9, conciseCloseIdx)
+                    } else {
+                      displayPortion = accumulatedContent.substring(conciseOpenIdx + 9)
+                    }
+                  }
+                } else if (mode === 'add-details') {
+                  // Strip tagging markers so user doesn't see raw tags
+                  displayPortion = displayPortion.replace(/<CONCISE>/ig, '')
+                    .replace(/<\/CONCISE>/ig, '')
+                    .replace(/<EXPLANATION>/ig, '')
+                    .replace(/<\/EXPLANATION>/ig, '')
+                }
+                let formattedContent = displayPortion
+              const needFormat = (accumulatedContent.length - lastFormatLenRef.current) > 80
+              if (needFormat) {
+                try {
+                  const partial = basicFormat(accumulatedContent)
+                  if (partial.content.trim()) {
+                    formattedContent = partial.content
+                    lastFormatLenRef.current = accumulatedContent.length
+                    messageMetadata = { ...messageMetadata, confidence: partial.confidence, segmentType: partial.type }
+                  }
+                } catch {}
+              }
+              updateMessage(assistantMessageId, { content: formattedContent, metadata: { ...messageMetadata, streaming: true } })
+            } else if (data.type === 'done') {
+              let finalContent = accumulatedContent
+              try {
+                const result = basicFormat(finalContent)
+                if (result.content.trim()) {
+                  finalContent = result.content
+                  messageMetadata = { ...messageMetadata, confidence: result.confidence, segmentType: result.type }
+                }
+              } catch {}
+              const split = splitDualResponse(finalContent)
+              // Infer mode
+              let inferredMode: string = messageMetadata.outputMode || 'DUAL'
+              if (split.concise && split.explanation) inferredMode = 'DUAL'
+              else if (split.explanation && !split.concise) inferredMode = 'EXPLANATION_ONLY'
+              else if (split.concise && !split.explanation) inferredMode = 'CONCISE_ONLY'
+              else if (/Step\s+1:|Final Answer:|✅ Final Answer:/i.test(finalContent)) inferredMode = 'EXPLANATION_ONLY'
+              const showContent = (mode === 'add-details'
+                ? (split.explanation || split.cleanedContent || finalContent)
+                : (split.concise || split.cleanedContent || finalContent)
+              ).replace(/<\/?(CONCISE|EXPLANATION)>/gi,'')
+              rawBufferRef.current = ''
+              lastFormatLenRef.current = 0
+              updateMessage(assistantMessageId, {
+                content: showContent,
+                metadata: {
+                  ...messageMetadata,
+                  streaming: false,
+                  completed: true,
+                  outputMode: inferredMode,
+                  concise: split.concise || undefined,
+                  explanation: split.explanation || undefined,
+                  explanationAvailable: !!split.explanation,
+                  showExplanation: mode === 'add-details' && !!split.explanation,
+                  variant: mode
+                }
+              })
+            } else if (data.type === 'error') {
+              throw new Error(data.error)
+            }
+          } catch {}
+        }
+      }
+    } catch (e) {
+      updateMessage(assistantMessageId, { content: 'Regeneration failed. Please try again.', metadata: { ...target.metadata, streaming: false, error: true } })
+    } finally {
+      setLoading(false)
+      setStreamingMessageId(null)
+    }
+  }, [apiEndpoint, currentSession?.id, selectedModel, settings.temperature, settings.maxTokens, settings.enableAutoAgents, settings.governance, updateMessage])
+
+  const sendMessage = useCallback(async (content: string, attachments?: File[]) => {
+    if (!content.trim()) return
+
+    // Create user message
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: content.trim(),
+      type: 'text',
+      timestamp: Date.now(),
+      attachments: attachments?.map(file => ({
+        id: `file-${Date.now()}-${Math.random()}`,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        url: URL.createObjectURL(file),
+      }))
+    }
+
+    addMessage(userMessage)
+    setLoading(true)
+
+    try {
+      if (enableStreaming && settings.streamResponses) {
+        await handleStreamingResponse(userMessage)
+      } else {
+        await handleRegularResponse(userMessage)
+      }
+    } catch (error) {
+      console.error('Chat error:', error)
+      
+      const errorMessage: ChatMessage = {
+        id: `error-${Date.now()}`,
+        role: 'assistant',
+        content: 'Sorry, I encountered an error while processing your message. Please try again.',
+        type: 'text',
+        timestamp: Date.now(),
+        metadata: { error: true }
+      }
+      
+      addMessage(errorMessage)
+      toast.error('Failed to send message')
+    } finally {
+      setLoading(false)
+      setStreamingMessageId(null)
+    }
+  }, [addMessage, setLoading, selectedModel, settings, enableStreaming])
+
+  const handleStreamingResponse = async (userMessage: ChatMessage) => {
+    const response = await fetch(apiEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: userMessage,
+        model: selectedModel,
+        settings: {
+          temperature: settings.temperature,
+          maxTokens: settings.maxTokens,
+          enableAutoAgents: settings.enableAutoAgents,
+          governance: settings.governance || { mode: 'smart', enabled: true },
+        },
+        sessionId: currentSession?.id,
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) {
+      throw new Error('No reader available')
+    }
+
+    // Create assistant message placeholder
+    const assistantMessageId = `assistant-${Date.now()}`
+    const assistantMessage: ChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      type: 'text',
+      timestamp: Date.now(),
+      metadata: {
+        model: selectedModel,
+        streaming: true
+      }
+    }
+
+    addMessage(assistantMessage)
+    setStreamingMessageId(assistantMessageId)
+    let accumulatedContent = ''
+    let messageMetadata = assistantMessage.metadata
+    try {
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break
+        const chunk = new TextDecoder().decode(value)
+        const lines = chunk.split('\n')
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(line.slice(6))
+            switch (data.type) {
+              case 'start':
+                messageMetadata = { ...messageMetadata, model: data.model }
+                break
+              case 'content':
+                if (!data.content) break
+                rawBufferRef.current += data.content
+                accumulatedContent = rawBufferRef.current
+                const mode = data.metadata?.outputMode || messageMetadata?.outputMode || 'DUAL'
+                let displayPortion = accumulatedContent
+                if (mode === 'CONCISE_ONLY' || mode === 'DUAL') {
+                  const o = accumulatedContent.search(/<CONCISE>/i)
+                  const c = accumulatedContent.search(/<\/CONCISE>/i)
+                  if (o >= 0) displayPortion = c > o ? accumulatedContent.substring(o + 9, c) : accumulatedContent.substring(o + 9)
+                }
+                displayPortion = displayPortion.replace(/<\/?(CONCISE|EXPLANATION)>/gi,'')
+                displayPortion = normalizeInlineMathArtifacts(displayPortion)
+                // Detect early indicators for rich formatting and persist preference
+                const richIndicators = /\$\$|\$[^$\n]+\$|Step\s+1:|Final Answer:|^\d+\.\s/m.test(accumulatedContent)
+                if (richIndicators && !(messageMetadata as any)?.richPreferred) {
+                  messageMetadata = { ...(messageMetadata || {}), richPreferred: true }
+                }
+                let formattedContent = displayPortion
+                const needFormat = (displayPortion.length - lastFormatLenRef.current) > 140
+                if (needFormat) {
+                  try {
+                    const partial = basicFormat(displayPortion)
+                    if (partial.content.trim()) {
+                      formattedContent = partial.content
+                      lastFormatLenRef.current = displayPortion.length
+                      messageMetadata = { ...messageMetadata, confidence: partial.confidence, segmentType: partial.type, outputMode: mode }
+                    }
+                  } catch {}
+                }
+                updateMessage(assistantMessageId, { content: formattedContent, metadata: { ...messageMetadata, streaming: true, outputMode: mode } })
+                break
+              case 'done':
+                let finalContent = accumulatedContent
+                try {
+                  const result = basicFormat(finalContent)
+                  if (result.content.trim()) {
+                    finalContent = result.content
+                    messageMetadata = { ...messageMetadata, confidence: result.confidence, segmentType: result.type }
+                  }
+                } catch {}
+                const modeFinal = messageMetadata?.outputMode || 'DUAL'
+                let concise: string | null = null
+                let explanation: string | null = null
+                let explanationAvailable = false
+                let initialContent = finalContent
+                const split = splitDualResponse(finalContent)
+                // Final rich indicators (steps, math, final answer, lists)
+                const finalRich = /\$\$|\$[^$\n]+\$|\\\(|\\\)|Step\s+1:|Final Answer:|^\d+\.\s|✅/m.test(finalContent)
+                
+                // DEBUG: Log content analysis
+                console.log('🔍 Content analysis for final update:', {
+                  modeFinal,
+                  finalContentLength: finalContent.length,
+                  splitResult: split,
+                  finalRich,
+                  contentPreview: finalContent.substring(0, 200)
+                });
+                
+                if (modeFinal === 'DUAL') {
+                  concise = split.concise
+                  explanation = split.explanation
+                  explanationAvailable = !!split.explanation
+                  
+                  // CRITICAL FIX: For Add Details mode, if no explicit explanation tags but content looks rich,
+                  // treat the entire content as explanation to preserve TipTap formatting
+                  if (!split.explanation && (finalRich || finalContent.length > 100 || messageMetadata?.variant === 'add-details')) {
+                    explanation = finalContent
+                    explanationAvailable = true
+                    initialContent = finalContent
+                    console.log('🔧 Treating full content as explanation for rich formatting preservation');
+                  } else if (split.explanation) {
+                    initialContent = split.explanation.replace(/<\/?(CONCISE|EXPLANATION)>/gi,'')
+                  } else {
+                    initialContent = (split.concise || split.cleanedContent).replace(/<\/?(CONCISE|EXPLANATION)>/gi,'')
+                  }
+                } else if (modeFinal === 'CONCISE_ONLY') {
+                  concise = split.concise || split.cleanedContent
+                  initialContent = (concise || '').replace(/<\/?(CONCISE|EXPLANATION)>/gi,'')
+                } else if (modeFinal === 'EXPLANATION_ONLY') {
+                  if (split.explanation) {
+                    initialContent = split.explanation
+                    explanation = split.explanation
+                  } else {
+                    initialContent = finalContent.replace(/<CONCISE>[\s\S]*?<\/CONCISE>/ig,'').replace(/<EXPLANATION>|<\/EXPLANATION>/ig,'').trim()
+                  }
+                  initialContent = initialContent.replace(/<\/?(CONCISE|EXPLANATION)>/gi,'')
+                }
+                rawBufferRef.current = ''
+                lastFormatLenRef.current = 0
+                
+                // DEBUG: Log final message update
+                console.log('🎯 Final message update:', {
+                  messageId: assistantMessageId,
+                  contentLength: initialContent.length,
+                  outputMode: modeFinal,
+                  explanationAvailable,
+                  richPreferred: (messageMetadata as any)?.richPreferred || finalRich,
+                  finalRich,
+                  hasSteps: /Step\s+1:|^\d+\.\s/.test(initialContent),
+                  hasMath: /\$\$|\$[^$\n]+\$/.test(initialContent),
+                  contentPreview: initialContent.substring(0, 200)
+                });
+                
+                // Ensure richPreferred is preserved for complex content
+                const shouldPreferRich = (messageMetadata as any)?.richPreferred || finalRich || 
+                                       (modeFinal === 'DUAL' && explanationAvailable) ||
+                                       messageMetadata?.variant === 'add-details';
+                
+                updateMessage(assistantMessageId, { 
+                  content: initialContent, 
+                  metadata: { 
+                    ...messageMetadata, 
+                    outputMode: modeFinal, 
+                    streaming: false, 
+                    completed: true, 
+                    concise: concise || undefined, 
+                    explanation: explanation || undefined, 
+                    explanationAvailable, 
+                    showExplanation: modeFinal === 'DUAL', 
+                    richPreferred: shouldPreferRich 
+                  } 
+                })
+                break
+              case 'error':
+                throw new Error(data.error)
+            }
+          } catch {
+            console.warn('Failed to parse SSE data:', line)
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  }
+
+  const handleRegularResponse = async (userMessage: ChatMessage) => {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: userMessage,
+        model: selectedModel,
+        settings: {
+          temperature: settings.temperature,
+          maxTokens: settings.maxTokens,
+          enableAutoAgents: settings.enableAutoAgents,
+          governance: settings.governance || { mode: 'smart', enabled: true },
+        },
+        sessionId: currentSession?.id,
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const data = await response.json()
+    addMessage(data.response)
+  }
+
+  const stopGeneration = useCallback(() => {
+    if (streamingMessageId) {
+  updateMessage(streamingMessageId, {
+        metadata: { 
+          ...useChatStore.getState().messages.find(m => m.id === streamingMessageId)?.metadata,
+          streaming: false,
+          stopped: true 
+        }
+      })
+  rawBufferRef.current = ''
+      setStreamingMessageId(null)
+      setLoading(false)
+    }
+  }, [streamingMessageId, updateMessage, setLoading])
+
+  return {
+    sendMessage,
+  regenerateMessage,
+    stopGeneration,
+    isStreaming: streamingMessageId !== null,
+    streamingMessageId,
+  }
+}

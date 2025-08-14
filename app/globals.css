@@ -1,0 +1,626 @@
+/* Google Fonts Import */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Adlam:wght@400..700&display=swap');
+
+/* KaTeX CSS for math rendering */
+@import 'katex/dist/katex.min.css';
+
+/* Enhanced KaTeX integration for both light and dark themes */
+.katex {
+  color: inherit !important;
+  font-size: inherit !important;
+}
+
+.katex-display {
+  margin: 1rem 0 !important;
+  text-align: center !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+
+.math-display {
+  margin: 1rem 0 !important;
+  text-align: center !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+
+.math-inline {
+  display: inline !important;
+  margin: 0 !important;
+}
+
+/* Ensure all KaTeX elements inherit theme colors */
+.katex .base,
+.katex .mord,
+.katex .mbin,
+.katex .mrel,
+.katex .mopen, 
+.katex .mclose,
+.katex .mpunct,
+.katex .mfrac,
+.katex .msqrt,
+.katex .mspace,
+.katex .mtext,
+.katex .accent-body,
+.katex .op-symbol,
+.katex .op-limits {
+  color: inherit !important;
+}
+
+.katex .frac-line {
+  border-bottom-color: currentColor !important;
+}
+
+.katex .sqrt-line {
+  border-top-color: currentColor !important;
+}
+
+/* Dark theme specific adjustments */
+.dark .katex {
+  color: rgb(229 231 235) !important; /* gray-200 */
+}
+
+.dark .katex .frac-line {
+  border-bottom-color: rgb(229 231 235) !important;
+}
+
+.dark .katex .sqrt-line {
+  border-top-color: rgb(229 231 235) !important;
+}
+
+/* Remove any default KaTeX backgrounds or borders */
+.katex-html {
+  background: none !important;
+  border: none !important;
+}
+
+/* Minimal syntax highlighting theme (works in light & dark) */
+pre code.hljs { background: transparent !important; color: #e5e7eb; }
+code.hljs { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+.hljs-comment,.hljs-quote{color:#6b7280;font-style:italic}
+.hljs-keyword,.hljs-selector-tag,.hljs-subst{color:#f472b6;font-weight:500}
+.hljs-number,.hljs-literal,.hljs-variable,.hljs-template-variable{color:#fbbf24}
+.hljs-string,.hljs-title,.hljs-name,.hljs-type,.hljs-attr{color:#86efac}
+.hljs-symbol,.hljs-bullet,.hljs-link{color:#60a5fa}
+.hljs-built_in,.hljs-builtin-name{color:#a78bfa}
+.hljs-meta{color:#f87171}
+.hljs-section{color:#93c5fd;font-weight:600}
+.hljs-emphasis{font-style:italic}
+.hljs-strong{font-weight:600}
+pre code { line-height:1.5; }
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Poppins font configuration */
+@layer base {
+  :root {
+    --font-poppins: var(--font-poppins);
+  }
+  
+  * {
+    font-family: var(--font-poppins), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", sans-serif;
+  }
+}
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 9%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 9%;
+  --primary: 0 0% 9%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 0 0% 96%;
+  --secondary-foreground: 0 0% 9%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 45%;
+  --accent: 0 0% 96%;
+  --accent-foreground: 0 0% 9%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 90%;
+  --input: 0 0% 90%;
+  --ring: 0 0% 9%;
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: 0 0% 6%;
+  --foreground: 0 0% 96%;
+  --card: 0 0% 9%;
+  --card-foreground: 0 0% 96%;
+  --popover: 0 0% 9%;
+  --popover-foreground: 0 0% 96%;
+  --primary: 0 0% 96%;
+  --primary-foreground: 0 0% 6%;
+  --secondary: 0 0% 15%;
+  --secondary-foreground: 0 0% 96%;
+  --muted: 0 0% 15%;
+  --muted-foreground: 0 0% 64%;
+  --accent: 0 0% 15%;
+  --accent-foreground: 0 0% 96%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 96%;
+  --border: 0 0% 15%;
+  --input: 0 0% 15%;
+  --ring: 0 0% 96%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-poppins), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", sans-serif;
+  overflow: hidden; /* Prevent body scroll since we handle scroll in containers */
+}
+
+/* ChatGPT-style scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Math Formatting Styles */
+.katex-display {
+  margin: 1rem 0;
+  text-align: center;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border-left: 3px solid #3b82f6;
+}
+
+.katex-inline {
+  display: inline-block;
+  margin: 0 2px;
+  padding: 2px 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+/* Simple Content Renderer Styles */
+.step-header {
+  color: #8b5cf6 !important;
+  margin: 1rem 0 0.5rem 0 !important;
+  font-weight: 500 !important;
+  font-size: 1rem !important;
+}
+
+.calc-header {
+  color: #10b981 !important;
+  margin: 1.5rem 0 0.75rem 0 !important;
+  font-weight: 600 !important;
+  font-size: 1.2rem !important;
+}
+
+.final-answer {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  background: transparent;
+  border-left: 3px solid #10b981;
+  border-radius: 4px;
+  font-size: 1.05em;
+  color: #10b981;
+}
+
+.answer {
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  background: transparent;
+  border-left: 2px solid #3b82f6;
+  border-radius: 4px;
+  color: #3b82f6;
+}
+
+.math-step {
+  margin: 0.5rem 0;
+  padding: 0.25rem 0;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 1rem;
+  color: inherit;
+  font-weight: 500;
+}
+
+.percentage {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+/* Rich Content Renderer Styles */
+.final-answer {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 8px;
+  text-align: center;
+  font-size: 1.1em;
+}
+
+.answer {
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  background: rgba(59, 130, 246, 0.1);
+  border-left: 3px solid #3b82f6;
+  border-radius: 4px;
+}
+
+.math-step {
+  margin: 0.5rem 0;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  border-left: 3px solid #8b5cf6;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.math-expression {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+/* Tiptap Editor Styles */
+.ProseMirror {
+  outline: none;
+}
+
+.ProseMirror h3 {
+  color: #10b981;
+  margin: 1rem 0 0.5rem 0;
+  font-weight: 600;
+}
+
+.ProseMirror h4 {
+  color: #8b5cf6;
+  margin: 0.75rem 0 0.25rem 0;
+  font-weight: 500;
+}
+
+.math-display {
+  margin: 1rem 0;
+  text-align: center;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border-left: 3px solid #3b82f6;
+}
+
+.math-inline {
+  display: inline-block;
+  margin: 0 2px;
+  padding: 2px 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.math-boxed {
+  display: inline-block;
+  margin: 0 4px;
+  padding: 4px 8px;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 6px;
+  font-weight: bold;
+}
+
+.calculation-step {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border-left: 3px solid #10b981;
+}
+
+.calculation-step h4 {
+  margin: 0 0 0.5rem 0;
+  color: #10b981;
+  font-weight: 600;
+}
+
+.step-by-step-math {
+  margin: 1rem 0;
+}
+
+.step-by-step-math .step {
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  border-left: 3px solid #8b5cf6;
+}
+
+.math-steps {
+  margin-top: 0.5rem;
+}
+
+/* Tiptap Rich Text Styles */
+.tiptap-content {
+  outline: none;
+}
+
+.tiptap-content h1, 
+.tiptap-content h2, 
+.tiptap-content h3, 
+.tiptap-content h4 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.tiptap-content h1 { font-size: 1.5rem; }
+.tiptap-content h2 { font-size: 1.3rem; }
+.tiptap-content h3 { 
+  font-size: 1.1rem; 
+  color: #10b981;
+}
+.tiptap-content h4 { 
+  font-size: 1rem; 
+  color: #8b5cf6;
+  margin-top: 1rem;
+}
+
+.tiptap-content p {
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+
+.tiptap-content strong {
+  font-weight: 600;
+  color: inherit;
+}
+
+.tiptap-content ol, 
+.tiptap-content ul {
+  margin: 0.75rem 0;
+  padding-left: 1.25rem;
+}
+
+.tiptap-content li {
+  margin: 0.25rem 0;
+  line-height: 1.5;
+}
+
+.tiptap-content code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.875rem;
+}
+
+.tiptap-content pre {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+
+.tiptap-content pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.875rem;
+  color: inherit;
+}
+
+/* TipTap Clean Styling - Notion-like appearance */
+.tiptap-wrapper {
+  line-height: 1.7;
+  color: inherit;
+}
+
+.tiptap-content-clean {
+  outline: none;
+  color: inherit;
+}
+
+/* Clean headings - no colors, just typography */
+.tiptap-content-clean h1 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.75rem 0;
+  line-height: 1.3;
+  color: inherit;
+}
+
+.tiptap-content-clean h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 1.25rem 0 0.625rem 0;
+  line-height: 1.3;
+  color: inherit;
+}
+
+.tiptap-content-clean h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 1rem 0 0.5rem 0;
+  line-height: 1.4;
+  color: inherit;
+}
+
+.tiptap-content-clean h4 {
+  font-size: 0.95rem;
+  font-weight: 500;
+  margin: 0.75rem 0 0.375rem 0;
+  line-height: 1.4;
+  color: inherit;
+}
+
+.tiptap-content-clean h5 {
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin: 0.5rem 0 0.25rem 0;
+  line-height: 1.4;
+  color: inherit;
+}
+
+/* Clean paragraphs */
+.tiptap-content-clean p {
+  margin: 0 0 0.75rem 0;
+  line-height: 1.6;
+  color: inherit;
+}
+
+/* Clean lists */
+.tiptap-content-clean ul,
+.tiptap-content-clean ol {
+  margin: 0.5rem 0 0.75rem 0;
+  padding-left: 1.5rem;
+}
+
+.tiptap-content-clean li {
+  margin: 0.25rem 0;
+  line-height: 1.5;
+  color: inherit;
+}
+
+.tiptap-content-clean ul {
+  list-style-type: disc;
+}
+
+.tiptap-content-clean ol {
+  list-style-type: decimal;
+}
+
+/* Clean text formatting */
+.tiptap-content-clean strong {
+  font-weight: 600;
+  color: inherit;
+}
+
+.tiptap-content-clean em {
+  font-style: italic;
+  color: inherit;
+}
+
+/* Clean code styling */
+.tiptap-content-clean code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.875em;
+  color: inherit;
+}
+
+.tiptap-content-clean pre {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.375rem;
+  padding: 0.75rem;
+  margin: 0.75rem 0;
+  overflow-x: auto;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.tiptap-content-clean pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+/* Clean blockquotes */
+.tiptap-content-clean blockquote {
+  border-left: 2px solid rgba(255, 255, 255, 0.3);
+  margin: 0.75rem 0;
+  padding-left: 1rem;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Math expressions - blend naturally */
+.tiptap-content-clean .katex {
+  color: inherit;
+  font-size: inherit;
+}
+
+.tiptap-content-clean .katex-display {
+  margin: 0.5rem 0;
+  text-align: left;
+}
+
+/* Enhanced Content Renderer Styles - Clean Typography */
+.enhanced-content {
+  line-height: 1.6;
+  color: inherit;
+}
+
+.enhanced-content h1,
+.enhanced-content h2,
+.enhanced-content h3,
+.enhanced-content h4 {
+  color: inherit;
+  font-weight: inherit;
+}
+
+.enhanced-content p {
+  margin-bottom: 0.75rem;
+  line-height: 1.6;
+}
+
+.enhanced-content ul,
+.enhanced-content ol {
+  margin-bottom: 0.75rem;
+}
+
+.enhanced-content li {
+  margin-bottom: 0.25rem;
+  line-height: 1.5;
+}
+
+.enhanced-content strong {
+  font-weight: 600;
+  color: inherit;
+}
+
+.enhanced-content code {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.875em;
+}
+
+.enhanced-content pre {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.875em;
+  line-height: 1.4;
+}
+
+/* Math expressions - clean and minimal */
+.enhanced-content .katex {
+  font-size: inherit;
+}
+
+.enhanced-content .katex-display {
+  margin: 0.5rem 0;
+  text-align: left;
+}

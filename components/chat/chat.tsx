@@ -61,12 +61,12 @@ export default function Chat() {
             <ChatMessage key={message.id} message={message} />
           ))}
           
+          {/* Show loading spinner only when processing backend request (before streaming starts) */}
           {isLoading && !isStreaming && (
             <div className="flex gap-4 p-4">
               <div className="flex-shrink-0 w-8 h-8 rounded-full text-muted-foreground flex items-center justify-center">
                 <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
               </div>
-              
             </div>
           )}
           

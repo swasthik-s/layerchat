@@ -64,11 +64,9 @@ export default function Chat() {
           {isLoading && !isStreaming && (
             <div className="flex gap-4 p-4">
               <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center">
-                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
               </div>
-              <div className="flex-1">
-                <div className="text-muted-foreground">Thinking...</div>
-              </div>
+              
             </div>
           )}
           

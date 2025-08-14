@@ -164,9 +164,6 @@ export default function ChatMessage({ message }: ChatMessageProps) {
                   return <div data-rich-render="true"><TextRender content={cleanedContent} /></div>
                   })()
                 }
-                {message.metadata?.streaming && (
-                  <div className="flex items-center gap-1 mt-2 text-muted-foreground/60"><div className="w-1 h-1 bg-current rounded-full animate-spin"/></div>
-                )}
               </div>
             )}
             {message.type === 'code' && (

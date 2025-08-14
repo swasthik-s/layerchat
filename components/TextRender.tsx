@@ -2,6 +2,13 @@
 
 import React, { useMemo } from 'react';
 import katex from 'katex';
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import remarkRehype from 'remark-rehype';
+import rehypeKatex from 'rehype-katex';
+import rehypeStringify from 'rehype-stringify';
 import 'katex/dist/katex.min.css';
 
 export interface TextRenderProps { 
@@ -31,80 +38,61 @@ const MATH_PATTERNS = [
   /[∑∏∫∆∞≤≥≠±]/g,
 ];
 
-// Convert text with auto-detected math to KaTeX
+// Convert text with auto-detected math to markdown format (not HTML)
 function processTextWithMath(text: string): string {
   let processed = text;
   
-  // First, preserve existing LaTeX expressions
-  const existingMath: { placeholder: string; content: string; isBlock: boolean }[] = [];
-  let counter = 0;
-  
-  // Extract existing $$...$$ (block math)
-  processed = processed.replace(/\$\$([^$]+?)\$\$/g, (match, content) => {
-    const placeholder = `__EXISTING_BLOCK_${counter++}__`;
-    existingMath.push({ placeholder, content: content.trim(), isBlock: true });
-    return placeholder;
+  // First, convert Mistral's LaTeX format \[ \] to standard $$ format
+  processed = processed.replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (match, content) => {
+    return `$$${content.trim()}$$`;
   });
   
-  // Extract existing $...$ (inline math)
-  processed = processed.replace(/\$([^$\n]+?)\$/g, (match, content) => {
-    const placeholder = `__EXISTING_INLINE_${counter++}__`;
-    existingMath.push({ placeholder, content: content.trim(), isBlock: false });
-    return placeholder;
-  });
-  
-  // Auto-detect and convert mathematical expressions
-  processed = autoDetectMath(processed);
-  
-  // Restore existing math expressions
-  existingMath.forEach(({ placeholder, content, isBlock }) => {
-    const rendered = renderMath(content, isBlock);
-    processed = processed.replace(placeholder, rendered);
-  });
+  // Auto-detect and convert mathematical expressions to markdown math notation
+  processed = autoDetectMathToMarkdown(processed);
   
   return processed;
 }
 
-// Auto-detect mathematical expressions and wrap them in KaTeX
-function autoDetectMath(text: string): string {
+// Auto-detect mathematical expressions and convert to markdown math notation
+function autoDetectMathToMarkdown(text: string): string {
   let result = text;
   
-  // Handle fractions like "25/100 = 1/4"
+  // Handle fractions like "25/100 = 1/4" (convert to markdown math)
   result = result.replace(/(\d+)\/(\d+)/g, (match, num, den) => {
     const fraction = `\\frac{${num}}{${den}}`;
-    return renderMath(fraction, false);
+    return `$${fraction}$`;
   });
   
   // Handle percentages with calculations like "25% = 25/100"
   result = result.replace(/(\d+)%\s*=\s*(\d+)\/(\d+)/g, (match, percent, num, den) => {
     const expression = `${percent}\\% = \\frac{${num}}{${den}}`;
-    return renderMath(expression, false);
+    return `$${expression}$`;
   });
   
   // Handle simple equations like "1/4 × 400 = 100"
-  result = result.replace(/(\d+)\/(\d+)\s*[×x*]\s*(\d+)\s*=\s*(\d+)/g, (match, num1, den1, num2, result) => {
-    const expression = `\\frac{${num1}}{${den1}} \\times ${num2} = ${result}`;
-    return renderMath(expression, false);
+  result = result.replace(/(\d+)\/(\d+)\s*[×x*]\s*(\d+)\s*=\s*(\d+)/g, (match, num1, den1, num2, resultNum) => {
+    const expression = `\\frac{${num1}}{${den1}} \\times ${num2} = ${resultNum}`;
+    return `$${expression}$`;
   });
   
   // Handle powers like "10^6"
   result = result.replace(/(\d+)\^([\d\-\+]+)/g, (match, base, exp) => {
     const expression = `${base}^{${exp}}`;
-    return renderMath(expression, false);
+    return `$${expression}$`;
   });
   
   // Handle square roots like "√400"
   result = result.replace(/√(\d+)/g, (match, num) => {
     const expression = `\\sqrt{${num}}`;
-    return renderMath(expression, false);
+    return `$${expression}$`;
   });
   
   // Handle simple arithmetic expressions that look mathematical
   result = result.replace(/(\d+(?:\.\d+)?)\s*([\+\-\*\/])\s*(\d+(?:\.\d+)?)\s*=\s*(\d+(?:\.\d+)?)/g, 
-    (match, num1, op, num2, result) => {
+    (match, num1, op, num2, resultNum) => {
       const operators = { '+': '+', '-': '-', '*': '\\times', '/': '\\div' };
-      const expression = `${num1} ${operators[op as keyof typeof operators] || op} ${num2} = ${result}`;
-      return renderMath(expression, false);
+      const expression = `${num1} ${operators[op as keyof typeof operators] || op} ${num2} = ${resultNum}`;
+      return `$${expression}$`;
     }
   );
   
@@ -125,21 +113,73 @@ function renderMath(expression: string, isBlock: boolean = false): string {
   }
 }
 
-// Simple markdown-like formatting
+// Enhanced markdown formatting using remark.js
 function formatMarkdown(text: string): string {
-  return text
-    // Bold text
+  try {
+    // Create unified processor for markdown parsing
+    const processor = unified()
+      .use(remarkParse)
+      .use(remarkGfm) // GitHub Flavored Markdown (tables, strikethrough, etc.)
+      .use(remarkMath) // Math support ($$ and $ syntax)
+      .use(remarkRehype, { 
+        allowDangerousHtml: true // Allow HTML in markdown
+      })
+      .use(rehypeKatex, {
+        throwOnError: false,
+        strict: false
+      }) // Render math with KaTeX
+      .use(rehypeStringify);
+
+    // Process the markdown and return HTML
+    const result = processor.processSync(text);
+    return String(result);
+  } catch (error) {
+    console.error('Remark.js processing error:', error);
+    // Fallback: use custom KaTeX rendering if remark fails
+    return fallbackFormatting(text);
+  }
+}
+
+// Fallback formatting function
+function fallbackFormatting(text: string): string {
+  let processed = text;
+  
+  // Handle existing math expressions
+  const existingMath: { placeholder: string; content: string; isBlock: boolean }[] = [];
+  let counter = 0;
+  
+  // Extract $$...$$ (block math)
+  processed = processed.replace(/\$\$([^$]+?)\$\$/g, (match, content) => {
+    const placeholder = `__BLOCK_${counter++}__`;
+    existingMath.push({ placeholder, content: content.trim(), isBlock: true });
+    return placeholder;
+  });
+  
+  // Extract $...$ (inline math)
+  processed = processed.replace(/\$([^$\n]+?)\$/g, (match, content) => {
+    const placeholder = `__INLINE_${counter++}__`;
+    existingMath.push({ placeholder, content: content.trim(), isBlock: false });
+    return placeholder;
+  });
+  
+  // Apply simple markdown formatting
+  processed = processed
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    // Headers
     .replace(/^### (.*$)/gm, '<h3>$1</h3>')
     .replace(/^## (.*$)/gm, '<h2>$1</h2>')
     .replace(/^# (.*$)/gm, '<h1>$1</h1>')
-    // Lists
     .replace(/^\d+\.\s+(.*$)/gm, '<li>$1</li>')
     .replace(/^[-•]\s+(.*$)/gm, '<li>$1</li>')
-    // Line breaks
     .replace(/\n\n/g, '<br/><br/>')
     .replace(/\n/g, '<br/>');
+  
+  // Restore math expressions with KaTeX
+  existingMath.forEach(({ placeholder, content, isBlock }) => {
+    const rendered = renderMath(content, isBlock);
+    processed = processed.replace(placeholder, rendered);
+  });
+  
+  return processed;
 }
 
 // Wrap consecutive list items in proper list tags
@@ -161,21 +201,24 @@ export default function TextRender({ content, className = "" }: TextRenderProps)
   const processedContent = useMemo(() => {
     if (!content) return '';
     
-    // Process math first
-    let processed = processTextWithMath(content);
-    
-    // Apply markdown formatting
-    processed = formatMarkdown(processed);
-    
-    // Wrap lists properly
-    processed = wrapLists(processed);
-    
-    return processed;
+    try {
+      // Step 1: Convert AI output to markdown format (with math detection and Mistral LaTeX conversion)
+      let processed = processTextWithMath(content);
+      
+      // Step 2: Use remark.js to convert markdown to HTML
+      processed = formatMarkdown(processed);
+      
+      return processed;
+    } catch (error) {
+      console.error('TextRender processing error:', error);
+      // Ultimate fallback
+      return content.replace(/\n/g, '<br/>');
+    }
   }, [content]);
   
   return (
     <div 
-      className={`prose prose-invert max-w-none ${className}`}
+      className={`prose prose-invert max-w-none text-render-custom ${className}`}
       dangerouslySetInnerHTML={{ __html: processedContent }}
     />
   );

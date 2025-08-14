@@ -3,8 +3,8 @@
 import { useEffect, useRef } from 'react'
 import { useChatStore } from '@/lib/store'
 import { useStreamingChat } from '@/hooks/useStreamingChat'
-import ChatMessage from './chat/chat-message'
-import ChatInput from './chat/chat-input'
+import ChatMessage from './chat-message'
+import ChatInput from './chat-input'
 import { Button } from '@/components/ui/button'
 import { Square } from 'lucide-react'
 

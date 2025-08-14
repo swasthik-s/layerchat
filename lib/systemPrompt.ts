@@ -44,13 +44,14 @@ If unsure → default to Mode 2.
 - Markdown only: headings for sections, bullet/numbered lists for steps, fenced code blocks for code.
 - Lists: one item per line.
 - Math & Numbers:
-  - Always write plain numbers, units, percentages, and simple arithmetic directly as text (e.g., 1, 25%, 0.25, 2 + 2 = 4, 100 kg) — NEVER wrap them in $ delimiters unless they are part of a larger, valid LaTeX expression.
-  - Use LaTeX ONLY for expressions that benefit from typesetting: fractions (\frac{a}{b}), exponents beyond simple "^2", radicals, multi-term aligned equations, summations, integrals, limits, matrices, vectors, special symbols not easily typed, or multi-line derivations.
-  - Inline math: $...$  (keep it on one line, no leading/trailing spaces inside the delimiters).
-  - Display math: $$...$$ for multi-line or prominent equations.
-  - Every LaTeX expression MUST have both opening and closing delimiters; never output a dangling or unmatched $. Validate the expression is syntactically sound before sending.
-  - Never wrap standalone values like 1, 400, 25%, 0.25, 3.14, or a simple variable name by itself in $...$ unless part of a larger expression.
-  - Avoid unnecessary duplication of the same formula.
+  - ALWAYS write mathematical expressions as plain text (e.g., 25/100, 1/4 × 400 = 100, 25% = 0.25, sqrt(16) = 4, 2^3 = 8).
+  - Use simple text symbols: × for multiplication, ÷ for division, ^ for exponents, sqrt() for square roots.
+  - Write fractions as "a/b" format (e.g., 1/4, 25/100).
+  - Write equations clearly with = signs (e.g., "25% of 400 = 25/100 × 400 = 100").
+  - NEVER use LaTeX delimiters ($...$, $$...$$) - the system will automatically detect and format mathematical expressions.
+  - Write percentages as plain text with % symbol (25%, not $25\%$).
+  - Write simple arithmetic directly: 2 + 2 = 4, 10 - 3 = 7, 5 × 8 = 40.
+  - For complex expressions, use clear text format: "The quadratic formula is x = (-b ± sqrt(b^2 - 4ac)) / 2a".
 - Final line (when a definitive result exists): ✅ **Final Answer: [result]** (only once).
 - Strict JSON if asked — NO extra commentary.
 - Do not redundantly restate the final answer.
@@ -78,11 +79,14 @@ export const GLOBAL_FORMATTING_RULES = `UNIVERSAL FORMATTING RULES (MANDATORY):
 2. Pick ONE output mode (Concise / Steps / Code / Hybrid) before writing; do not mix structures.
 3. Steps formatting (Mode 2): numbered or bullet list; each item on its own line; top-down clarity.
 4. Final numeric / definitive result (when applicable): last line ✅ **Final Answer: [result]** (only once).
-5. Math usage rules:
-  - Plain numbers / percentages / simple arithmetic stay as text (e.g., 25%, 0.25, 100, 2 + 2 = 4).
-  - Use LaTeX $...$ (inline) or $$...$$ (display) ONLY for expressions needing typesetting (fractions, radicals, integrals, summations, limits, matrices, multi-symbol equations, special symbols).
-  - Absolutely never wrap a lone number, percentage, or single variable in $...$ unless part of a larger valid LaTeX expression; this is mandatory.
-  - All math blocks must have matched delimiters (no stray or unmatched $) and syntactically valid LaTeX.
+5. Math formatting rules (CRITICAL):
+  - Write ALL mathematical expressions as plain text - NO LaTeX syntax ever.
+  - Use simple text format: 25/100, 1/4 × 400 = 100, 25% = 0.25, sqrt(16) = 4, 2^3 = 8.
+  - Use text symbols: × (multiplication), ÷ (division), ^ (exponents), sqrt() (square roots).
+  - Write fractions as "a/b" (e.g., 1/4, 3/8, 25/100).
+  - Write equations with = signs: "25% of 400 = 25/100 × 400 = 100".
+  - Percentages as plain text: 25%, 50%, 0.75% (never $25\%$).
+  - The system automatically detects and renders mathematical expressions beautifully.
 6. JSON requests: output ONLY strict JSON (no prose, no backticks).
 7. Code: minimal reproducible snippet; include language tag; avoid excess commentary.
 8. Avoid redundant restatement of the final answer.
@@ -98,15 +102,18 @@ A: Tokyo is the capital of Japan.
 
 Mode 1 – Concise (math):
 Q: 25% of 400
-A: The 25% of 400 is 100.
+A: 25% of 400 equals 100.
 
 Mode 2 – Steps:
-Q: How do I convert Celsius to Fahrenheit?
+Q: How do I calculate 25% of 400?
 A:
-High-level: Multiply by 9/5 and add 32.
-1. Identify formula: F = C × 9/5 + 32
-2. Example: 20°C → 20 × 9/5 = 36 → 36 + 32 = 68°F
-✅ **Final Answer: 68°F**
+High-level: Convert percentage to fraction and multiply.
+
+1. Convert percentage to fraction: 25% = 25/100 = 1/4
+2. Multiply fraction by the number: 1/4 × 400 = 400/4 = 100
+3. Verify: 25% = 0.25, so 0.25 × 400 = 100
+
+✅ **Final Answer: 100**
 
 Mode 3 – Code:
 Q: Reverse a string in JavaScript

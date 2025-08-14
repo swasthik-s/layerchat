@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { Orchestrator } from '@/orchestrator'
+import { Orchestrator } from '@/app/orchestrator'
 import { ChatMessage } from '@/types'
 import { validateConfig } from '@/lib/config'
 import { AIGovernance } from '@/lib/governance'

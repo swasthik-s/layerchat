@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { useChatStore } from '@/lib/store'
 import Sidebar from '@/components/sidebar'
 import Header from '@/components/header'
-import Chat from '@/components/chat'
+import Chat from '@/components/chat/chat'
 import { Toaster } from 'react-hot-toast'
 
 export default function Home() {

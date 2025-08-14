@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useChatStore } from '@/lib/store'
 import { useStreamingChat } from '@/hooks/useStreamingChat'
-import { ChatGPTRichRenderer } from './ChatGPTRichRenderer'
+import TextRender from '../TextRender'
 
 interface ChatMessageProps { message: ChatMessageType }
 
@@ -47,7 +47,19 @@ const ActionButtons = ({ message }: { message: ChatMessageType }) => {
 export default function ChatMessage({ message }: ChatMessageProps) {
   const [imageError, setImageError] = useState(false)
   const [copied, setCopied] = useState(false)
+  const { isStreaming, streamingMessageId } = useStreamingChat()
   const isUser = message.role === 'user'
+  const isCurrentlyStreaming = isStreaming && streamingMessageId === message.id
+  
+  // Check if this message is being regenerated - hide during regeneration but show during normal streaming
+  const isRegenerating = message.metadata?.regenerating || 
+                         (message.metadata?.variant && !message.content.trim())
+
+  // If this is an assistant message being regenerated, don't render it - let the loading indicator handle it
+  if (!isUser && isRegenerating) {
+    return null
+  }
+  
   const copyUser = async () => { try { await navigator.clipboard.writeText(message.content); setCopied(true); setTimeout(()=>setCopied(false),2000) } catch{} }
   const editUser = () => { console.log('Edit message', message.id) }
 
@@ -149,7 +161,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
                   const baseContent = (message.metadata?.showExplanation && (message.metadata as any)?.explanation) ? (message.metadata as any).explanation : message.content
                   const cleanedContent = baseContent.replace(/<\/?(CONCISE|EXPLANATION)>/gi,'').trim()
                   // Determine if we should use rich formatting
-                  return <div data-rich-render="true"><ChatGPTRichRenderer content={cleanedContent} /></div>
+                  return <div data-rich-render="true"><TextRender content={cleanedContent} /></div>
                   })()
                 }
                 {message.metadata?.streaming && (
@@ -174,15 +186,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
             {!message.metadata?.streaming && !isCurrentlyStreaming && <ActionButtons message={message} />}
           </div>
         )}
-        {!isUser && (
-          <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-            {message.metadata?.model && <span>Model: {message.metadata.model}</span>}
-            {message.metadata?.agent && <span>Agent: {message.metadata.agent}</span>}
-            {message.metadata?.tokens && <span>Tokens: {message.metadata.tokens}</span>}
-            {message.metadata?.streaming && <span className="flex items-center gap-1"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"/>Streaming...</span>}
-            {message.metadata?.error && <span className="text-destructive">Error occurred</span>}
-          </div>
-        )}
+        
       </div>
     </div>
   )

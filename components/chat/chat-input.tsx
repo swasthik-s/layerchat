@@ -16,7 +16,8 @@ import {
   Cloud, 
   HardDrive,
   Settings,
-  Square
+  Square,
+  Plus
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getModelsByProvider, ModelInfo } from '@/lib/models-config'
@@ -72,6 +73,17 @@ export default function ChatInput({ onSendMessage, disabled = false, isStreaming
     }
   }, [isModelDropdownOpen])
 
+  // Effect to handle initial textarea sizing and reset on message clear
+  useEffect(() => {
+    if (textareaRef.current) {
+      if (message === '') {
+        // Reset to minimum height when empty
+        textareaRef.current.style.height = '40px'
+        textareaRef.current.style.overflowY = 'hidden'
+      }
+    }
+  }, [message])
+
   const handleModelSelect = (modelName: string) => {
     setSelectedModel(modelName)
     setIsModelDropdownOpen(false)
@@ -99,8 +111,23 @@ export default function ChatInput({ onSendMessage, disabled = false, isStreaming
     setMessage(e.target.value)
     
     if (textareaRef.current) {
+      // Reset height to auto to get accurate scrollHeight
       textareaRef.current.style.height = 'auto'
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
+      
+      // Calculate new height with constraints
+      const scrollHeight = textareaRef.current.scrollHeight
+      const minHeight = 40 // min-h-[40px]
+      const maxHeight = 200 // max-h-[200px]
+      
+      const newHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight)
+      textareaRef.current.style.height = `${newHeight}px`
+      
+      // Handle overflow for max height
+      if (scrollHeight > maxHeight) {
+        textareaRef.current.style.overflowY = 'auto'
+      } else {
+        textareaRef.current.style.overflowY = 'hidden'
+      }
     }
   }
 
@@ -153,16 +180,16 @@ export default function ChatInput({ onSendMessage, disabled = false, isStreaming
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 pb-safe">
       <div className="ml-0 lg:ml-64">
-        <div className="max-w-5xl mx-auto px-4 pb-4">
+        <div className="max-w-[768px] mx-auto px-4 pb-4">
           {/* ChatGPT-style Input Container */}
-          <div className="mb-4 bg-white dark:bg-neutral-800 rounded-full shadow-lg border border-neutral-200 dark:border-neutral-600">
+          <div className="mb-4 bg-white dark:bg-neutral-800 rounded-md shadow-black dark:border-neutral-600">
             
             {/* Attachments Display */}
             {attachments.length > 0 && (
               <div className="px-2 sm:px-4 pt-2 sm:pt-3 flex flex-wrap gap-1 sm:gap-2">
                 {attachments.map((file, index) => (
-                  <div key={index} className="flex items-center gap-1 sm:gap-2 bg-neutral-100 dark:bg-neutral-700 px-2 sm:px-3 py-1 sm:py-1.5 rounded-md sm:rounded-lg">
-                    <Paperclip size={10} className="sm:w-3 sm:h-3" />
+                  <div key={index} className="flex items-center gap-1 sm:gap-2 bg-neutral-100 dark:bg-neutral-700 px-2 sm:px-3 py-1 sm:py-1.5 rounded-md">
+                    <Plus size={10} className="sm:w-3 sm:h-3" />
                     <span className="text-xs truncate max-w-16 sm:max-w-24">{file.name}</span>
                     <Button
                       variant="ghost"
@@ -177,8 +204,8 @@ export default function ChatInput({ onSendMessage, disabled = false, isStreaming
               </div>
             )}
             
-            {/* Main Input Row - ChatGPT Style Pipe */}
-            <div className="flex items-center gap-2 px-2 py-2 h-14">
+            {/* Main Input Row - ChatGPT Style Expandable */}
+            <div className="flex items-end gap-2 px-2 py-2 min-h-[56px]">
               {/* Left - File Upload Button */}
               <Button
                 variant="ghost"
@@ -186,11 +213,11 @@ export default function ChatInput({ onSendMessage, disabled = false, isStreaming
                 onClick={() => fileInputRef.current?.click()}
                 className="h-10 w-10 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-700 flex-shrink-0"
               >
-                <Paperclip size={18} />
+                <Plus size={18} />
               </Button>
               
               {/* Center - Text Input */}
-              <div className="flex-1 min-w-0 flex items-center">
+              
                 <Textarea
                   ref={textareaRef}
                   value={message}
@@ -198,13 +225,13 @@ export default function ChatInput({ onSendMessage, disabled = false, isStreaming
                   onKeyDown={handleKeyDown}
                   placeholder="Message LayerChat..."
                   disabled={disabled}
-                  className="border-0 bg-transparent text-sm sm:text-base focus:ring-0 focus:outline-none w-full"
-                  
+                  className="border-0 bg-transparent text-sm sm:text-base focus:ring-0 focus:outline-none w-full resize-none overflow-hidden min-h-[40px] max-h-[200px] transition-all duration-150 ease-out"
+                  rows={1}
                 />
-              </div>
+              
               
               {/* Right Side - Gear Icon for Tools & Send Button */}
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-end gap-2 flex-shrink-0">
                 {/* Gear Icon for All Tools */}
                 <div className="relative">
                   <Button
@@ -344,7 +371,7 @@ export default function ChatInput({ onSendMessage, disabled = false, isStreaming
                 {isStreaming ? (
                   <Button
                     onClick={onStopGeneration}
-                    className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700 flex-shrink-0"
+                    className="h-8 w-8 sm:h-10 sm:w-10 rounded-full flex-shrink-0"
                     size="icon"
                   >
                     <Square size={14} className="sm:w-[18px] sm:h-[18px] text-white" />

@@ -773,24 +773,52 @@ body {
   margin: 2rem 0 !important;
 }
 
-/* Math expressions in TextRender */
+/* Math expressions in TextRender - GitHub-style clean appearance */
 .text-render-custom .katex {
   color: #ffffff !important;
+  font-size: 1em !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Primary block math styling - clean GitHub-style */
+.text-render-custom .katex-display,
+.text-render-custom .katex[data-display="true"],
+.text-render-custom span[class*="katex-display"] {
+  background: transparent !important;
+  padding: 0.5rem 0 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  margin: 1rem 0 !important;
+  text-align: left !important;
+  overflow-x: auto !important;
+  box-shadow: none !important;
+  display: block !important;
+  width: auto !important;
+  max-width: 100% !important;
   font-size: 1.1em !important;
 }
 
-.text-render-custom .katex-display {
-  background: rgba(31, 41, 55, 0.5) !important;
-  padding: 1rem !important;
-  border-radius: 0.5rem !important;
-  border: 1px solid #374151 !important;
-  margin: 1.5rem 0 !important;
-  text-align: center !important;
-  overflow-x: auto !important;
+/* Force block behavior with left alignment */
+.text-render-custom p .katex-display,
+.text-render-custom p .katex[data-display="true"],
+.text-render-custom p span[class*="katex-display"] {
+  display: block !important;
+  margin: 1rem 0 !important;
+  text-align: left !important;
+  clear: both !important;
+}
+
+/* Target KaTeX elements that should be block but aren't properly detected */
+.text-render-custom .katex-html[data-display="true"] {
+  display: block !important;
+  text-align: left !important;
 }
 
 .text-render-custom .katex-html {
   color: #ffffff !important;
+  background: transparent !important;
 }
 
 .text-render-custom .katex .base,
@@ -817,15 +845,20 @@ body {
   border-radius: 0.25rem !important;
 }
 
-/* Inline math styling */
-.text-render-custom p .katex {
+/* Inline math styling - clean and minimal */
+.text-render-custom .katex:not(.katex-display):not([data-display="true"]) {
   display: inline !important;
-  margin: 0 0.2em !important;
+  margin: 0 0.1em !important;
+  padding: 0 !important;
+  vertical-align: baseline !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  font-size: 1em !important;
 }
 
-/* Block math should be on its own line */
-.text-render-custom .katex-display {
-  display: block !important;
-  margin: 1.5rem auto !important;
-  max-width: 100% !important;
+/* Override paragraph alignment for block math - use left alignment */
+.text-render-custom p:has(.katex-display),
+.text-render-custom p:has(.katex[data-display="true"]) {
+  text-align: left !important;
 }

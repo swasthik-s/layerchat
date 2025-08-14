@@ -28,8 +28,8 @@ export default function Chat() {
     <div className="flex flex-col h-full">
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto pb-4">
-  {/* Centered bounded container: adjust max-w-* as needed to match red box width */}
-  <div className="w-full px-4 lg:px-8 max-w-5xl mx-auto">
+  {/* Centered bounded container: exactly 768px width */}
+  <div className="w-full px-4 lg:px-8 max-w-[868px] mx-auto">
           {shouldShowWelcome && (
             <div className="flex items-center justify-center h-full min-h-[50vh]">
               <div className="text-center space-y-4 p-8">
@@ -62,13 +62,11 @@ export default function Chat() {
           ))}
           
           {isLoading && !isStreaming && (
-            <div className="flex gap-4 p-4 bg-muted/30">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-muted text-muted-foreground flex items-center justify-center">
+            <div className="flex gap-4 p-4">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full text-muted-foreground flex items-center justify-center">
                 <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
               </div>
-              <div className="flex-1">
-                <div className="text-muted-foreground">Thinking...</div>
-              </div>
+              
             </div>
           )}
           
@@ -88,7 +86,7 @@ export default function Chat() {
 
       {/* Footer area with background to prevent scroll-through */}
       <div className="bg-background flex items-end justify-center p-2">
-        <p className="text-xs text-muted-foreground text-center max-w-4xl mx-auto px-4">
+        <p className="text-xs text-muted-foreground text-center max-w-[768px] mx-auto px-4">
           ChatGPT can make mistakes. Check important info.
         </p>
       </div>

@@ -1,27 +1,19 @@
-To determine what 25% of 400 is, follow these steps:
+To calculate a percentage of a number, convert the percentage to a decimal or fraction and then multiply by the base value. Here's how:
 
-### Step 1: Convert the percentage to a fraction
-Percent means "per hundred," so:
-$$
-25\% = \frac{25}{100} = \frac{1}{4}
-$$
+### Step-by-Step Calculation:
 
-### Step 2: Multiply the fraction by the given number
-Now multiply the fraction by 400 to find 25% of it:
-$$
-\frac{1}{4} \times 400 = \frac{400}{4} = 100
-$$
+1. **Understand 25% as a fraction or decimal**
+   Percent means "per hundred", so:
+   $$ 25\% = \frac{25}{100} = 0.25 $$
 
-### Step 3: Optional – Use decimal to double-check
-Convert 25% to a decimal:
-$$
-25\% = 0.25
-$$
-Then multiply:
-$$
-0.25 \times 400 = 100
-$$
+2. **Multiply by the target value (400)**
+   Multiply the decimal form of the percentage by the number:
+   $$ 0.25 \times 400 = 100 $$
 
-Both methods yield the same result, confirming the accuracy.
+   Alternatively, using the fraction form:
+   $$ \frac{25}{100} \times 400 = \frac{1}{4} \times 400 = 100 $$
 
-**Final Answer: 100**
+3. **Interpret the result**
+   Taking 25% of 400 means you're finding one-quarter of 400, which confirms the result.
+
+✅ **Final Answer: 100**

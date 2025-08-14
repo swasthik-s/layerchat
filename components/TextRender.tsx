@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import katex from 'katex';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
@@ -42,13 +42,39 @@ const MATH_PATTERNS = [
 function processTextWithMath(text: string): string {
   let processed = text;
   
-  // First, convert Mistral's LaTeX format \[ \] to standard $$ format
+  // Enhanced Mistral LaTeX conversion
+  
+  // Step 1: Convert Mistral's block math \[ \] to standard $$ format
   processed = processed.replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (match, content) => {
-    return `$$${content.trim()}$$`;
+    // Clean up any potential special characters or formatting issues
+    const cleanContent = content.trim()
+      .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width characters
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .replace(/\\\\/g, '\\'); // Fix double backslashes
+    return `$$${cleanContent}$$`;
   });
   
-  // Auto-detect and convert mathematical expressions to markdown math notation
-  processed = autoDetectMathToMarkdown(processed);
+  // Step 2: Convert Mistral's inline math \( \) to standard $ format
+  processed = processed.replace(/\\\(\s*([\s\S]*?)\s*\\\)/g, (match, content) => {
+    // Clean up any potential special characters or formatting issues
+    const cleanContent = content.trim()
+      .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width characters
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .replace(/\\\\/g, '\\'); // Fix double backslashes
+    return `$${cleanContent}$`;
+  });
+  
+  // Step 3: Handle orphaned escaped brackets (not part of math expressions)
+  // This is a more conservative approach to clean up remaining issues
+  processed = processed.replace(/\\\[(?![^$]*\$\$)/g, '['); // \[ not followed by $$ 
+  processed = processed.replace(/\\\](?![^$]*\$\$)/g, ']'); // \] not followed by $$
+  processed = processed.replace(/\\\((?![^$]*\$)/g, '(');   // \( not followed by $
+  processed = processed.replace(/\\\)(?![^$]*\$)/g, ')');   // \) not followed by $
+  
+  // Step 4: Only auto-detect math if no existing math delimiters are present
+  if (!processed.includes('$$') && !processed.includes('$')) {
+    processed = autoDetectMathToMarkdown(processed);
+  }
   
   return processed;
 }
@@ -57,44 +83,32 @@ function processTextWithMath(text: string): string {
 function autoDetectMathToMarkdown(text: string): string {
   let result = text;
   
-  // Handle fractions like "25/100 = 1/4" (convert to markdown math)
-  result = result.replace(/(\d+)\/(\d+)/g, (match, num, den) => {
-    const fraction = `\\frac{${num}}{${den}}`;
-    return `$${fraction}$`;
+  // Only detect very obvious mathematical patterns to avoid false positives
+  
+  // 1. Handle simple fractions (only small numbers to be conservative)
+  result = result.replace(/\b([1-9])\/([1-9])\b/g, (match, num, den) => {
+    return `$\\frac{${num}}{${den}}$`;
   });
   
-  // Handle percentages with calculations like "25% = 25/100"
-  result = result.replace(/(\d+)%\s*=\s*(\d+)\/(\d+)/g, (match, percent, num, den) => {
-    const expression = `${percent}\\% = \\frac{${num}}{${den}}`;
-    return `$${expression}$`;
-  });
-  
-  // Handle simple equations like "1/4 × 400 = 100"
-  result = result.replace(/(\d+)\/(\d+)\s*[×x*]\s*(\d+)\s*=\s*(\d+)/g, (match, num1, den1, num2, resultNum) => {
-    const expression = `\\frac{${num1}}{${den1}} \\times ${num2} = ${resultNum}`;
-    return `$${expression}$`;
-  });
-  
-  // Handle powers like "10^6"
-  result = result.replace(/(\d+)\^([\d\-\+]+)/g, (match, base, exp) => {
-    const expression = `${base}^{${exp}}`;
-    return `$${expression}$`;
-  });
-  
-  // Handle square roots like "√400"
-  result = result.replace(/√(\d+)/g, (match, num) => {
-    const expression = `\\sqrt{${num}}`;
-    return `$${expression}$`;
-  });
-  
-  // Handle simple arithmetic expressions that look mathematical
-  result = result.replace(/(\d+(?:\.\d+)?)\s*([\+\-\*\/])\s*(\d+(?:\.\d+)?)\s*=\s*(\d+(?:\.\d+)?)/g, 
+  // 2. Handle basic arithmetic with equals (a op b = c)
+  result = result.replace(/\b(\d{1,3})\s*([+\-×÷])\s*(\d{1,3})\s*=\s*(\d{1,3})\b/g, 
     (match, num1, op, num2, resultNum) => {
-      const operators = { '+': '+', '-': '-', '*': '\\times', '/': '\\div' };
+      const operators = { '+': '+', '-': '-', '×': '\\times', '÷': '\\div' };
       const expression = `${num1} ${operators[op as keyof typeof operators] || op} ${num2} = ${resultNum}`;
       return `$${expression}$`;
     }
   );
+  
+  // 3. Handle percentage conversions (conservative pattern)
+  result = result.replace(/(\d{1,2})%\s*=\s*(\d{1,2})\/(\d{1,3})/g, (match, percent, num, den) => {
+    const expression = `${percent}\\% = \\frac{${num}}{${den}}`;
+    return `$${expression}$`;
+  });
+  
+  // 4. Handle simple powers (single digit bases and exponents)
+  result = result.replace(/(\d)\^([1-9])/g, (match, base, exp) => {
+    return `$${base}^{${exp}}$`;
+  });
   
   return result;
 }
@@ -126,13 +140,30 @@ function formatMarkdown(text: string): string {
       })
       .use(rehypeKatex, {
         throwOnError: false,
-        strict: false
+        strict: false,
+        displayMode: false, // Let remark-math handle display mode detection
+        trust: true
       }) // Render math with KaTeX
       .use(rehypeStringify);
 
     // Process the markdown and return HTML
     const result = processor.processSync(text);
-    return String(result);
+    let html = String(result);
+    
+    // More robust post-processing for block math
+    // Look for KaTeX display elements and ensure they're properly wrapped
+    html = html.replace(
+      /<span class="katex-display">([\s\S]*?)<\/span>/g,
+      '<div class="katex-display-wrapper"><span class="katex-display">$1</span></div>'
+    );
+    
+    // Also handle cases where KaTeX generates different markup
+    html = html.replace(
+      /<span class="katex"><span class="katex-mathml">[\s\S]*?<\/span><span class="katex-html"[^>]*?data-display="true"[^>]*?>([\s\S]*?)<\/span><\/span>/g,
+      '<div class="katex-display-wrapper"><span class="katex katex-display"><span class="katex-html" data-display="true">$1</span></span></div>'
+    );
+    
+    return html;
   } catch (error) {
     console.error('Remark.js processing error:', error);
     // Fallback: use custom KaTeX rendering if remark fails
@@ -198,6 +229,8 @@ function wrapLists(html: string): string {
 }
 
 export default function TextRender({ content, className = "" }: TextRenderProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  
   const processedContent = useMemo(() => {
     if (!content) return '';
     
@@ -215,9 +248,60 @@ export default function TextRender({ content, className = "" }: TextRenderProps)
       return content.replace(/\n/g, '<br/>');
     }
   }, [content]);
+
+  // Post-render effect to ensure block math display
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    // Find all KaTeX elements and ensure proper display mode
+    const katexElements = containerRef.current.querySelectorAll('.katex');
+    
+    katexElements.forEach((element) => {
+      const katexHtml = element.querySelector('.katex-html');
+      const isDisplayMode = katexHtml?.getAttribute('aria-hidden') === 'true' && 
+                           element.classList.contains('katex-display') ||
+                           katexHtml?.hasAttribute('data-display') ||
+                           element.textContent?.includes('\\frac') ||
+                           element.textContent?.includes('\\times');
+      
+      if (isDisplayMode) {
+        // Clean GitHub-style block display
+        element.classList.add('katex-display');
+        (element as HTMLElement).style.display = 'block';
+        (element as HTMLElement).style.textAlign = 'left';
+        (element as HTMLElement).style.margin = '1rem 0';
+        (element as HTMLElement).style.padding = '0.5rem 0';
+        (element as HTMLElement).style.background = 'transparent';
+        (element as HTMLElement).style.borderRadius = '0';
+        (element as HTMLElement).style.border = 'none';
+        (element as HTMLElement).style.boxShadow = 'none';
+        (element as HTMLElement).style.width = 'auto';
+        (element as HTMLElement).style.maxWidth = '100%';
+        (element as HTMLElement).style.fontSize = '1.1em';
+        
+        // Ensure parent paragraph uses normal text alignment
+        const parent = element.parentElement;
+        if (parent?.tagName === 'P') {
+          (parent as HTMLElement).style.textAlign = 'left';
+        }
+      } else {
+        // Clean inline display
+        element.classList.remove('katex-display');
+        (element as HTMLElement).style.display = 'inline';
+        (element as HTMLElement).style.margin = '0 0.1em';
+        (element as HTMLElement).style.padding = '0';
+        (element as HTMLElement).style.background = 'transparent';
+        (element as HTMLElement).style.border = 'none';
+        (element as HTMLElement).style.boxShadow = 'none';
+        (element as HTMLElement).style.fontSize = '1em';
+        (element as HTMLElement).style.verticalAlign = 'baseline';
+      }
+    });
+  }, [processedContent]);
   
   return (
     <div 
+      ref={containerRef}
       className={`prose prose-invert max-w-none text-render-custom ${className}`}
       dangerouslySetInnerHTML={{ __html: processedContent }}
     />

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import { ChatMessage as ChatMessageType } from '@/types'
-import { User, Bot, Search, Calculator, Youtube, Cloud, Copy, Edit, ThumbsUp, Volume2, Share,ThumbsDown, RefreshCw } from 'lucide-react'
+import { User, Bot, Search, Calculator, Youtube, Cloud, Copy, Edit, ThumbsUp, Volume2, Share,ThumbsDown, RefreshCw, Loader } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useChatStore } from '@/lib/store'
@@ -165,7 +165,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
                   })()
                 }
                 {message.metadata?.streaming && (
-                  <div className="flex items-center gap-1 mt-2 text-muted-foreground/60"><div className="w-1 h-1 bg-current rounded-full animate-pulse"/><span className="text-xs">streaming...</span></div>
+                  <div className="flex items-center gap-1 mt-2 text-muted-foreground/60"><div className="w-1 h-1 bg-current rounded-full animate-spin"/></div>
                 )}
               </div>
             )}

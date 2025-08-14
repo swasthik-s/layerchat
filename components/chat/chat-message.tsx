@@ -55,10 +55,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
   const isRegenerating = message.metadata?.regenerating || 
                          (message.metadata?.variant && !message.content.trim())
 
-  // If this is an assistant message being regenerated, don't render it - let the loading indicator handle it
-  if (!isUser && isRegenerating) {
-    return null
-  }
+  // Don't hide the entire message during regeneration - show avatar with loading state instead
   
   const copyUser = async () => { try { await navigator.clipboard.writeText(message.content); setCopied(true); setTimeout(()=>setCopied(false),2000) } catch{} }
   const editUser = () => { console.log('Edit message', message.id) }
@@ -154,16 +151,29 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           <div className="w-full">
             {message.type === 'text' && (
               <div className="relative w-full">
-                {/* Render unified markdown output */}
-                {(() => {
-                  // Clean leaked dual tags before detection
-                  // If explanation stored separately and showExplanation flag set, prefer that for rendering
-                  const baseContent = (message.metadata?.showExplanation && (message.metadata as any)?.explanation) ? (message.metadata as any).explanation : message.content
-                  const cleanedContent = baseContent.replace(/<\/?(CONCISE|EXPLANATION)>/gi,'').trim()
-                  // Determine if we should use rich formatting
-                  return <div data-rich-render="true"><TextRender content={cleanedContent} /></div>
-                  })()
-                }
+                {/* Show loading state during regeneration */}
+                {!isUser && isRegenerating ? (
+                  <div className="flex items-center gap-2 py-2">
+                    <div className="unified-dot loading" />
+                    <span className="text-muted-foreground text-sm">Regenerating response...</span>
+                  </div>
+                ) : (
+                  /* Render unified markdown output */
+                  (() => {
+                    // Clean leaked dual tags before detection
+                    // If explanation stored separately and showExplanation flag set, prefer that for rendering
+                    const baseContent = (message.metadata?.showExplanation && (message.metadata as any)?.explanation) ? (message.metadata as any).explanation : message.content
+                    const cleanedContent = baseContent.replace(/<\/?(CONCISE|EXPLANATION)>/gi,'').trim()
+                    // Determine if we should use rich formatting with streaming typewriter
+                    return <div data-rich-render="true">
+                      <TextRender 
+                        content={cleanedContent} 
+                        isStreaming={isCurrentlyStreaming || message.metadata?.streaming || false}
+                        useTypewriter={true}
+                      />
+                    </div>
+                    })()
+                )}
               </div>
             )}
             {message.type === 'code' && (

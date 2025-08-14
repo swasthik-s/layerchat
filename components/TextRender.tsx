@@ -14,6 +14,8 @@ import 'katex/dist/katex.min.css';
 export interface TextRenderProps { 
   content: string; 
   className?: string;
+  isStreaming?: boolean;
+  useTypewriter?: boolean;
 }
 
 // Auto-detect math patterns in AI responses
@@ -40,43 +42,62 @@ const MATH_PATTERNS = [
 
 // Convert text with auto-detected math to markdown format (not HTML)
 function processTextWithMath(text: string): string {
-  let processed = text;
-  
-  // Enhanced Mistral LaTeX conversion
-  
-  // Step 1: Convert Mistral's block math \[ \] to standard $$ format
-  processed = processed.replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (match, content) => {
-    // Clean up any potential special characters or formatting issues
-    const cleanContent = content.trim()
-      .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width characters
-      .replace(/\s+/g, ' ') // Normalize whitespace
-      .replace(/\\\\/g, '\\'); // Fix double backslashes
-    return `$$${cleanContent}$$`;
-  });
-  
-  // Step 2: Convert Mistral's inline math \( \) to standard $ format
-  processed = processed.replace(/\\\(\s*([\s\S]*?)\s*\\\)/g, (match, content) => {
-    // Clean up any potential special characters or formatting issues
-    const cleanContent = content.trim()
-      .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width characters
-      .replace(/\s+/g, ' ') // Normalize whitespace
-      .replace(/\\\\/g, '\\'); // Fix double backslashes
-    return `$${cleanContent}$`;
-  });
-  
-  // Step 3: Handle orphaned escaped brackets (not part of math expressions)
-  // This is a more conservative approach to clean up remaining issues
-  processed = processed.replace(/\\\[(?![^$]*\$\$)/g, '['); // \[ not followed by $$ 
-  processed = processed.replace(/\\\](?![^$]*\$\$)/g, ']'); // \] not followed by $$
-  processed = processed.replace(/\\\((?![^$]*\$)/g, '(');   // \( not followed by $
-  processed = processed.replace(/\\\)(?![^$]*\$)/g, ')');   // \) not followed by $
-  
-  // Step 4: Only auto-detect math if no existing math delimiters are present
-  if (!processed.includes('$$') && !processed.includes('$')) {
-    processed = autoDetectMathToMarkdown(processed);
+  try {
+    if (!text || typeof text !== 'string') {
+      return '';
+    }
+    
+    let processed = text;
+    
+    // Enhanced Mistral LaTeX conversion
+    
+    // Step 1: Convert Mistral's block math \[ \] to standard $$ format
+    processed = processed.replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (match, content) => {
+      try {
+        // Clean up any potential special characters or formatting issues
+        const cleanContent = content.trim()
+          .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width characters
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .replace(/\\\\/g, '\\'); // Fix double backslashes
+        return `$$${cleanContent}$$`;
+      } catch (err) {
+        console.warn('Error processing block math:', err);
+        return match; // Return original if processing fails
+      }
+    });
+    
+    // Step 2: Convert Mistral's inline math \( \) to standard $ format
+    processed = processed.replace(/\\\(\s*([\s\S]*?)\s*\\\)/g, (match, content) => {
+      try {
+        // Clean up any potential special characters or formatting issues
+        const cleanContent = content.trim()
+          .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width characters
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .replace(/\\\\/g, '\\'); // Fix double backslashes
+        return `$${cleanContent}$`;
+      } catch (err) {
+        console.warn('Error processing inline math:', err);
+        return match; // Return original if processing fails
+      }
+    });
+    
+    // Step 3: Handle orphaned escaped brackets (not part of math expressions)
+    // This is a more conservative approach to clean up remaining issues
+    processed = processed.replace(/\\\[(?![^$]*\$\$)/g, '['); // \[ not followed by $$ 
+    processed = processed.replace(/\\\](?![^$]*\$\$)/g, ']'); // \] not followed by $$
+    processed = processed.replace(/\\\((?![^$]*\$)/g, '(');   // \( not followed by $
+    processed = processed.replace(/\\\)(?![^$]*\$)/g, ')');   // \) not followed by $
+    
+    // Step 4: Only auto-detect math if no existing math delimiters are present
+    if (!processed.includes('$$') && !processed.includes('$')) {
+      processed = autoDetectMathToMarkdown(processed);
+    }
+    
+    return processed;
+  } catch (error) {
+    console.error('Error in processTextWithMath:', error);
+    return text; // Return original text if processing fails
   }
-  
-  return processed;
 }
 
 // Auto-detect mathematical expressions and convert to markdown math notation
@@ -85,27 +106,39 @@ function autoDetectMathToMarkdown(text: string): string {
   
   // Only detect very obvious mathematical patterns to avoid false positives
   
-  // 1. Handle simple fractions (only small numbers to be conservative)
-  result = result.replace(/\b([1-9])\/([1-9])\b/g, (match, num, den) => {
-    return `$\\frac{${num}}{${den}}$`;
+  // 1. Handle fractions (including larger numbers like 25/100) - use block math for fractions
+  result = result.replace(/\b(\d+)\/(\d+)\b/g, (match, num, den) => {
+    return `$$\\frac{${num}}{${den}}$$`;
   });
   
-  // 2. Handle basic arithmetic with equals (a op b = c)
-  result = result.replace(/\b(\d{1,3})\s*([+\-×÷])\s*(\d{1,3})\s*=\s*(\d{1,3})\b/g, 
+  // 2. Handle percentage × number calculations - use block math for calculations
+  result = result.replace(/\b(\d+)%\s*(?:×|x|\*)\s*(\d+)\s*=\s*(\d+)/gi, (match, percent, num, resultNum) => {
+    const expression = `${percent}\\% \\times ${num} = ${resultNum}`;
+    return `$$${expression}$$`;
+  });
+  
+  // 3. Handle decimal × number calculations - use block math 
+  result = result.replace(/\b(0\.\d+)\s*(?:×|x|\*)\s*(\d+)\s*=\s*(\d+)/gi, (match, decimal, num, resultNum) => {
+    const expression = `${decimal} \\times ${num} = ${resultNum}`;
+    return `$$${expression}$$`;
+  });
+  
+  // 4. Handle basic arithmetic with equals (a op b = c) - use block math for equations
+  result = result.replace(/\b(\d{1,3})\s*([+\-×÷*\/])\s*(\d{1,3})\s*=\s*(\d{1,3})\b/g, 
     (match, num1, op, num2, resultNum) => {
-      const operators = { '+': '+', '-': '-', '×': '\\times', '÷': '\\div' };
+      const operators = { '+': '+', '-': '-', '×': '\\times', '÷': '\\div', '*': '\\times', '/': '\\div' };
       const expression = `${num1} ${operators[op as keyof typeof operators] || op} ${num2} = ${resultNum}`;
-      return `$${expression}$`;
+      return `$$${expression}$$`;
     }
   );
   
-  // 3. Handle percentage conversions (conservative pattern)
-  result = result.replace(/(\d{1,2})%\s*=\s*(\d{1,2})\/(\d{1,3})/g, (match, percent, num, den) => {
+  // 5. Handle percentage conversions (25% = 25/100) - use block math 
+  result = result.replace(/(\d{1,3})%\s*=\s*(\d{1,3})\/(\d{1,3})/g, (match, percent, num, den) => {
     const expression = `${percent}\\% = \\frac{${num}}{${den}}`;
-    return `$${expression}$`;
+    return `$$${expression}$$`;
   });
   
-  // 4. Handle simple powers (single digit bases and exponents)
+  // 6. Handle simple powers (single digit bases and exponents) - use inline for simple powers
   result = result.replace(/(\d)\^([1-9])/g, (match, base, exp) => {
     return `$${base}^{${exp}}$`;
   });
@@ -127,45 +160,84 @@ function renderMath(expression: string, isBlock: boolean = false): string {
   }
 }
 
-// Enhanced markdown formatting using remark.js
+// Enhanced markdown formatting using remark.js with better error handling and timeout
 function formatMarkdown(text: string): string {
   try {
-    // Create unified processor for markdown parsing
-    const processor = unified()
-      .use(remarkParse)
-      .use(remarkGfm) // GitHub Flavored Markdown (tables, strikethrough, etc.)
-      .use(remarkMath) // Math support ($$ and $ syntax)
-      .use(remarkRehype, { 
-        allowDangerousHtml: true // Allow HTML in markdown
-      })
-      .use(rehypeKatex, {
-        throwOnError: false,
-        strict: false,
-        displayMode: false, // Let remark-math handle display mode detection
-        trust: true
-      }) // Render math with KaTeX
-      .use(rehypeStringify);
+    // Validate input
+    if (!text || typeof text !== 'string') {
+      return '';
+    }
+    
+    // Timeout mechanism to prevent hanging
+    const timeoutMs = 2000; // 2 seconds timeout
+    let isTimedOut = false;
+    
+    const timeoutId = setTimeout(() => {
+      isTimedOut = true;
+      console.warn('Markdown processing timed out, falling back');
+    }, timeoutMs);
+    
+    try {
+      // Create unified processor for markdown parsing
+      const processor = unified()
+        .use(remarkParse)
+        .use(remarkGfm) // GitHub Flavored Markdown (tables, strikethrough, etc.)
+        .use(remarkMath) // Math support ($$ and $ syntax)
+        .use(remarkRehype, { 
+          allowDangerousHtml: true // Allow HTML in markdown
+        })
+        .use(rehypeKatex, {
+          throwOnError: false,
+          strict: false,
+          displayMode: false, // Let remark-math handle display mode detection
+          trust: true,
+          errorColor: '#ff0000'
+        }) // Render math with KaTeX
+        .use(rehypeStringify);
 
-    // Process the markdown and return HTML
-    const result = processor.processSync(text);
-    let html = String(result);
-    
-    // More robust post-processing for block math
-    // Look for KaTeX display elements and ensure they're properly wrapped
-    html = html.replace(
-      /<span class="katex-display">([\s\S]*?)<\/span>/g,
-      '<div class="katex-display-wrapper"><span class="katex-display">$1</span></div>'
-    );
-    
-    // Also handle cases where KaTeX generates different markup
-    html = html.replace(
-      /<span class="katex"><span class="katex-mathml">[\s\S]*?<\/span><span class="katex-html"[^>]*?data-display="true"[^>]*?>([\s\S]*?)<\/span><\/span>/g,
-      '<div class="katex-display-wrapper"><span class="katex katex-display"><span class="katex-html" data-display="true">$1</span></span></div>'
-    );
-    
-    return html;
+      // Check timeout before processing
+      if (isTimedOut) {
+        return fallbackFormatting(text);
+      }
+
+      // Process the markdown and return HTML
+      const result = processor.processSync(text);
+      clearTimeout(timeoutId);
+      
+      // Check timeout after processing
+      if (isTimedOut) {
+        return fallbackFormatting(text);
+      }
+      
+      let html = String(result);
+      
+      // Validate result
+      if (!html || html.trim() === '') {
+        console.warn('Remark.js produced empty result, falling back');
+        return fallbackFormatting(text);
+      }
+      
+      // More robust post-processing for block math
+      // Look for KaTeX display elements and ensure they're properly wrapped
+      html = html.replace(
+        /<span class="katex-display">([\s\S]*?)<\/span>/g,
+        '<div class="katex-display-wrapper"><span class="katex-display">$1</span></div>'
+      );
+      
+      // Also handle cases where KaTeX generates different markup
+      html = html.replace(
+        /<span class="katex"><span class="katex-mathml">[\s\S]*?<\/span><span class="katex-html"[^>]*?data-display="true"[^>]*?>([\s\S]*?)<\/span><\/span>/g,
+        '<div class="katex-display-wrapper"><span class="katex katex-display"><span class="katex-html" data-display="true">$1</span></span></div>'
+      );
+      
+      return html;
+    } catch (processingError) {
+      clearTimeout(timeoutId);
+      console.error('Remark.js processing error:', processingError);
+      return fallbackFormatting(text);
+    }
   } catch (error) {
-    console.error('Remark.js processing error:', error);
+    console.error('Remark.js wrapper error:', error);
     // Fallback: use custom KaTeX rendering if remark fails
     return fallbackFormatting(text);
   }
@@ -228,11 +300,30 @@ function wrapLists(html: string): string {
     });
 }
 
-export default function TextRender({ content, className = "" }: TextRenderProps) {
+export default function TextRender({ content, className = "", isStreaming = false, useTypewriter = false }: TextRenderProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const lastProcessedContentRef = useRef<string>('');
+  const lastProcessedResultRef = useRef<string>('');
+  const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const processedContent = useMemo(() => {
     if (!content) return '';
+    
+    // Skip reprocessing if content hasn't actually changed (optimization for streaming)
+    if (content === lastProcessedContentRef.current && lastProcessedResultRef.current) {
+      return lastProcessedResultRef.current;
+    }
+    
+    // During streaming, debounce processing for performance
+    if (isStreaming && content.length > 100) {
+      const contentLength = content.length;
+      const lastLength = lastProcessedContentRef.current.length;
+      
+      // Only reprocess if significant content has been added or streaming stopped
+      if (contentLength - lastLength < 50 && isStreaming) {
+        return lastProcessedResultRef.current || content.replace(/\n/g, '<br/>');
+      }
+    }
     
     try {
       // Step 1: Convert AI output to markdown format (with math detection and Mistral LaTeX conversion)
@@ -241,13 +332,29 @@ export default function TextRender({ content, className = "" }: TextRenderProps)
       // Step 2: Use remark.js to convert markdown to HTML
       processed = formatMarkdown(processed);
       
+      // Cache the result
+      lastProcessedContentRef.current = content;
+      lastProcessedResultRef.current = processed;
+      
       return processed;
     } catch (error) {
       console.error('TextRender processing error:', error);
       // Ultimate fallback
-      return content.replace(/\n/g, '<br/>');
+      const fallback = content.replace(/\n/g, '<br/>');
+      lastProcessedContentRef.current = content;
+      lastProcessedResultRef.current = fallback;
+      return fallback;
     }
-  }, [content]);
+  }, [content, isStreaming]);
+
+  // Cleanup effect
+  useEffect(() => {
+    return () => {
+      if (processingTimeoutRef.current) {
+        clearTimeout(processingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Post-render effect to ensure block math display
   useEffect(() => {
@@ -258,14 +365,25 @@ export default function TextRender({ content, className = "" }: TextRenderProps)
     
     katexElements.forEach((element) => {
       const katexHtml = element.querySelector('.katex-html');
-      const isDisplayMode = katexHtml?.getAttribute('aria-hidden') === 'true' && 
-                           element.classList.contains('katex-display') ||
-                           katexHtml?.hasAttribute('data-display') ||
-                           element.textContent?.includes('\\frac') ||
-                           element.textContent?.includes('\\times');
       
-      if (isDisplayMode) {
-        // Clean GitHub-style block display
+      // More robust block math detection
+      const hasBlockMathClass = element.classList.contains('katex-display');
+      const hasDisplayAttribute = katexHtml?.hasAttribute('data-display');
+      const isInDisplayWrapper = element.closest('.katex-display-wrapper') !== null;
+      
+      // Check if this contains complex math that should be displayed as block
+      const mathContent = element.textContent || '';
+      const hasComplexMath = mathContent.includes('\\frac') || 
+                           mathContent.includes('\\times') || 
+                           mathContent.includes('\\div') ||
+                           mathContent.includes('=') ||
+                           /\d+\s*\\%/.test(mathContent); // percentage formulas
+      
+      // Check if the original content had $$ delimiters (block math)
+      const isBlockMath = hasBlockMathClass || hasDisplayAttribute || isInDisplayWrapper;
+      
+      if (isBlockMath || hasComplexMath) {
+        // Force block display for complex math or originally block math
         element.classList.add('katex-display');
         (element as HTMLElement).style.display = 'block';
         (element as HTMLElement).style.textAlign = 'left';
@@ -285,7 +403,7 @@ export default function TextRender({ content, className = "" }: TextRenderProps)
           (parent as HTMLElement).style.textAlign = 'left';
         }
       } else {
-        // Clean inline display
+        // Clean inline display for simple math
         element.classList.remove('katex-display');
         (element as HTMLElement).style.display = 'inline';
         (element as HTMLElement).style.margin = '0 0.1em';
@@ -299,6 +417,29 @@ export default function TextRender({ content, className = "" }: TextRenderProps)
     });
   }, [processedContent]);
   
+  // During streaming, show raw content immediately with unified dot cursor
+  if (isStreaming && useTypewriter) {
+    return (
+      <div 
+        ref={containerRef}
+        className={`prose prose-invert max-w-none text-render-custom ${className}`}
+      >
+        <div className="inline-block">
+          <span className="whitespace-pre-wrap">{content}</span>
+          <span
+            className="unified-dot streaming"
+            style={{
+              verticalAlign: "middle",
+              marginLeft: "2px",
+              marginBottom: "2px"
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+  
+  // When not streaming, show fully formatted HTML with math rendering
   return (
     <div 
       ref={containerRef}

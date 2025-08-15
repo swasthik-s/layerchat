@@ -1,6 +1,8 @@
 'use client'
 
 import { useChatStore } from '@/lib/store'
+import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { MessageSquare, Settings, Menu, X, Trash2 } from 'lucide-react'
 
@@ -10,26 +12,48 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
+  const router = useRouter()
   const { 
     sessions, 
     currentSession, 
     setCurrentSession, 
     createNewSession, 
-    deleteSession 
+    deleteSession,
+    resetToNewChat,
+    loadChatsFromMongoDB
   } = useChatStore()
 
-  const handleNewChat = () => {
-    createNewSession()
-    // Close sidebar on mobile after creating new chat
-    if (window.innerWidth < 1024) {
-      onToggle()
+  // Load chats from MongoDB on component mount
+  useEffect(() => {
+    loadChatsFromMongoDB()
+  }, [loadChatsFromMongoDB])
+
+  const handleNewChat = async () => {
+    try {
+      // Reset the current session and messages to get a clean slate
+      resetToNewChat()
+      
+      // Always navigate to home page to ensure fresh start
+      router.push('/')
+      
+      // Force a refresh if already on the home page
+      if (window.location.pathname === '/') {
+        router.refresh()
+      }
+      
+      // Close sidebar on mobile after creating new chat
+      if (window.innerWidth < 1024) {
+        onToggle()
+      }
+    } catch (error) {
+      console.error('Failed to create new chat:', error)
     }
   }
 
   const handleSelectSession = (sessionId: string) => {
     const session = sessions.find(s => s.id === sessionId)
     if (session) {
-      setCurrentSession(session)
+      router.push(`/chat/${sessionId}`)
       // Close sidebar on mobile after selecting chat
       if (window.innerWidth < 1024) {
         onToggle()
@@ -37,9 +61,29 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
     }
   }
 
-  const handleDeleteSession = (sessionId: string, e: React.MouseEvent) => {
+  const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    deleteSession(sessionId)
+    
+    try {
+      // Delete from MongoDB
+      const response = await fetch(`/api/chat/${sessionId}`, {
+        method: 'DELETE'
+      })
+      
+      if (response.ok) {
+        // Remove from local store
+        deleteSession(sessionId)
+        
+        // If this was the current session, navigate to home
+        if (currentSession?.id === sessionId) {
+          router.push('/')
+        }
+      } else {
+        console.error('Failed to delete chat from MongoDB')
+      }
+    } catch (error) {
+      console.error('Error deleting chat:', error)
+    }
   }
 
   const formatDate = (timestamp: number) => {
@@ -98,7 +142,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
           </div>
 
           {/* Chat History */}
-          <div className="flex-1 overflow-y-auto px-4">
+          <div className="flex-1 overflow-y-auto px-2">
             <div className="space-y-2">
               {sessions.length === 0 ? (
                 <div className="text-center text-muted-foreground py-8">
@@ -112,7 +156,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
                     key={session.id}
                     onClick={() => handleSelectSession(session.id)}
                     className={`
-                      group relative p-3 rounded-lg cursor-pointer transition-colors
+                      group relative p-1  rounded-lg cursor-pointer transition-colors
                       ${currentSession?.id === session.id 
                         ? 'bg-accent text-accent-foreground' 
                         : 'hover:bg-accent/50'
@@ -120,16 +164,11 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
                     `}
                   >
                     <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1">
                         <div className="text-sm font-medium truncate">
                           {session.title}
                         </div>
-                        <div className="text-xs text-muted-foreground">
-                          {formatDate(session.updatedAt)} • {session.messages.length} messages
-                        </div>
-                        <div className="text-xs text-muted-foreground/80 mt-1">
-                          Model: {session.model}
-                        </div>
+                        
                       </div>
                       
                       {/* Delete button */}
@@ -154,10 +193,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
               <Settings size={16} className="mr-2" />
               Settings
             </Button>
-            <div className="mt-3 text-xs text-muted-foreground">
-              <div>Total chats: {sessions.length}</div>
-              <div>Current model: {currentSession?.model || 'GPT-4'}</div>
-            </div>
+            
           </div>
         </div>
       </aside>

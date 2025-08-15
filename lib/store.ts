@@ -34,14 +34,18 @@ interface ChatState {
   setCurrentSession: (session: ChatSession | null) => void
   addMessage: (message: ChatMessage) => void
   updateMessage: (id: string, updates: Partial<ChatMessage>) => void
-  createNewSession: () => void
+  createNewSession: () => Promise<string> // Return the chat ID
   deleteSession: (id: string) => void
+  resetToNewChat: () => void // Reset to initial state for new chat
   setLoading: (loading: boolean) => void
   setSelectedModel: (model: string) => void
   setSelectedProvider: (provider: string) => void
   setSidebarOpen: (open: boolean) => void
   updateSettings: (settings: Partial<ChatState['settings']>) => void
   clearMessages: () => void
+  loadChatFromMongoDB: (chatId: string) => Promise<void>
+  loadChatsFromMongoDB: () => Promise<void>
+  deleteMessage: (messageId: string, chatId?: string) => Promise<void>
 }
 
 export const useChatStore = create<ChatState>()(
@@ -111,23 +115,68 @@ export const useChatStore = create<ChatState>()(
         set({ messages: newMessages })
       },
       
-      createNewSession: () => {
-        const newSession: ChatSession = {
-          id: `session-${Date.now()}`,
-          title: 'New Chat',
-          messages: [],
-          model: get().selectedModel,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
+      createNewSession: async () => {
+        try {
+          // Create new chat in MongoDB
+          const response = await fetch('/api/chat/id', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              title: 'New Chat',
+              model: get().selectedModel,
+            }),
+          })
+
+          if (!response.ok) {
+            throw new Error('Failed to create new chat')
+          }
+
+          const data = await response.json()
+          const chatId = data.id
+
+          const newSession: ChatSession = {
+            id: chatId,
+            title: 'New Chat',
+            messages: [],
+            model: get().selectedModel,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }
+
+          const sessions = [newSession, ...get().sessions]
+
+          set({
+            currentSession: newSession,
+            messages: [],
+            sessions
+          })
+
+          return chatId
+        } catch (error) {
+          console.error('Error creating new session:', error)
+          // Fallback to local session
+          const localId = `session-${Date.now()}`
+          const newSession: ChatSession = {
+            id: localId,
+            title: 'New Chat',
+            messages: [],
+            model: get().selectedModel,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }
+
+          const sessions = [newSession, ...get().sessions]
+
+          set({
+            currentSession: newSession,
+            messages: [],
+            sessions
+          })
+
+          return localId
         }
-        
-        const sessions = [newSession, ...get().sessions]
-        
-        set({
-          currentSession: newSession,
-          messages: [],
-          sessions
-        })
       },
       
       deleteSession: (id) => {
@@ -144,6 +193,14 @@ export const useChatStore = create<ChatState>()(
             get().createNewSession()
           }
         }
+      },
+      
+      resetToNewChat: () => {
+        set({
+          currentSession: null,
+          messages: [],
+          isLoading: false
+        })
       },
       
       setLoading: (loading) => set({ isLoading: loading }),
@@ -170,6 +227,108 @@ export const useChatStore = create<ChatState>()(
       },
       
       clearMessages: () => set({ messages: [] }),
+
+      loadChatFromMongoDB: async (chatId: string) => {
+        try {
+          set({ isLoading: true })
+          
+          const response = await fetch(`/api/chat/${chatId}`)
+          
+          if (!response.ok) {
+            throw new Error('Failed to load chat')
+          }
+
+          const data = await response.json()
+          const chatData = data.chat
+
+          const session: ChatSession = {
+            id: chatData.id,
+            title: chatData.title,
+            model: chatData.model,
+            messages: chatData.messages || [],
+            createdAt: chatData.createdAt,
+            updatedAt: chatData.updatedAt,
+            metadata: chatData.metadata
+          }
+
+          set({
+            currentSession: session,
+            messages: session.messages
+          })
+        } catch (error) {
+          console.error('Error loading chat from MongoDB:', error)
+          throw error
+        } finally {
+          set({ isLoading: false })
+        }
+      },
+
+      loadChatsFromMongoDB: async () => {
+        try {
+          const response = await fetch('/api/chats')
+          
+          if (!response.ok) {
+            throw new Error('Failed to load chats')
+          }
+
+          const data = await response.json()
+          const chats = data.chats
+
+          const sessions: ChatSession[] = chats.map((chat: any) => ({
+            id: chat.id,
+            title: chat.title,
+            model: chat.model,
+            messages: [], // Don't load messages for list view
+            createdAt: chat.createdAt,
+            updatedAt: chat.updatedAt,
+            metadata: chat.metadata
+          }))
+
+          set({ sessions })
+        } catch (error) {
+          console.error('Error loading chats from MongoDB:', error)
+          // Keep existing sessions on error
+        }
+      },
+
+      deleteMessage: async (messageId: string, chatId?: string) => {
+        try {
+          const { currentSession } = get()
+          const targetChatId = chatId || currentSession?.id
+          
+          if (!targetChatId) {
+            throw new Error('No chat ID available for message deletion')
+          }
+
+          // Delete from MongoDB if it's a persisted chat
+          if (targetChatId.length > 20) { // UUID format, so it's in MongoDB
+            const response = await fetch(`/api/chat/${targetChatId}/messages/${messageId}`, {
+              method: 'DELETE'
+            })
+            
+            if (!response.ok) {
+              throw new Error('Failed to delete message from MongoDB')
+            }
+          }
+
+          // Remove from local store
+          const newMessages = get().messages.filter(msg => msg.id !== messageId)
+          set({ messages: newMessages })
+
+          // Update current session messages
+          if (currentSession && currentSession.id === targetChatId) {
+            const updatedSession = {
+              ...currentSession,
+              messages: newMessages,
+              updatedAt: Date.now()
+            }
+            set({ currentSession: updatedSession })
+          }
+        } catch (error) {
+          console.error('Error deleting message:', error)
+          throw error
+        }
+      },
     }),
     {
       name: 'layerchat-storage',

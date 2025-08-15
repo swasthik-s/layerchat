@@ -1,12 +1,13 @@
 import React, { useState } from 'react'
 import { ChatMessage as ChatMessageType } from '@/types'
-import { User, Bot, Search, Calculator, Youtube, Cloud, Copy, Edit, ThumbsUp, Volume2, Share,ThumbsDown, RefreshCw, Loader } from 'lucide-react'
+import { User, Bot, Search, Calculator, Youtube, Cloud, Copy, Edit, ThumbsUp, Volume2, Share,ThumbsDown, RefreshCw, Loader, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useChatStore } from '@/lib/store'
 import { useStreamingChat } from '@/hooks/useStreamingChat'
 import TextRender from '../TextRender'
-import SearchStatus from '../SearchStatus'
+import SearchStatus from '../ui/SearchStatus'
+import { useRouter } from 'next/navigation'
 
 interface ChatMessageProps { 
   message: ChatMessageType
@@ -16,6 +17,9 @@ interface ChatMessageProps {
 
 const ActionButtons = ({ message }: { message: ChatMessageType }) => {
   const [copied, setCopied] = useState(false)
+  const { deleteMessage, currentSession } = useChatStore()
+  const router = useRouter()
+  
   const copy = async () => {
     try { await navigator.clipboard.writeText(message.content); setCopied(true); setTimeout(()=>setCopied(false),2000) } catch {}
   }
@@ -24,6 +28,16 @@ const ActionButtons = ({ message }: { message: ChatMessageType }) => {
   const { regenerateMessage } = useStreamingChat()
   const handleRegenerate = (mode: 'add-details' | 'more-concise') => regenerateMessage(message.id, mode)
 
+  const handleDelete = async () => {
+    if (window.confirm('Are you sure you want to delete this message?')) {
+      try {
+        await deleteMessage(message.id, currentSession?.id)
+      } catch (error) {
+        console.error('Failed to delete message:', error)
+      }
+    }
+  }
+
   return (
     <div className="flex items-center gap-1 mt-3">
       <Button variant="ghost" size="sm" onClick={copy} className="h-7 px-2 text-xs hover:bg-muted" title={copied? 'Copied!' : 'Copy response'}><Copy size={12}/></Button>
@@ -31,6 +45,7 @@ const ActionButtons = ({ message }: { message: ChatMessageType }) => {
       <Button variant="ghost" size="sm" className="h-7 px-2 text-xs hover:bg-muted hover:text-red-600" title="Poor response"><ThumbsDown size={12}/></Button>
       <Button variant="ghost" size="sm" onClick={()=>{ if('speechSynthesis' in window){ speechSynthesis.speak(new SpeechSynthesisUtterance(message.content)) } }} className="h-7 px-2 text-xs hover:bg-muted" title="Read aloud"><Volume2 size={12}/></Button>
       <Button variant="ghost" size="sm" className="h-7 px-2 text-xs hover:bg-muted" title="Share response" onClick={()=>{ if(navigator.share){ navigator.share({title:'AI Response', text: message.content}) } else copy() }}><Share size={12}/></Button>
+      <Button variant="ghost" size="sm" onClick={handleDelete} className="h-7 px-2 text-xs hover:bg-muted hover:text-red-600" title="Delete message"><Trash2 size={12}/></Button>
 
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>
@@ -158,8 +173,10 @@ export default function ChatMessage({ message, searchPhase, isStreamingMessage }
               <Button variant="ghost" size="sm" onClick={editUser} className="h-7 px-2 text-xs hover:bg-muted" title="Edit message"><Edit size={12}/></Button>
               <Button variant="ghost" size="sm" onClick={copyUser} className="h-7 px-2 text-xs hover:bg-muted" title={copied? 'Copied!' : 'Copy message'}><Copy size={12}/></Button>
             </div>
-            <div className="bg-neutral-800 text-white rounded-full rounded-br-md px-3 sm:px-4 py-2 sm:py-2">
-              <div className="whitespace-pre-wrap break-words text-sm sm:text-base">{message.content}</div>
+            <div className="flex flex-col items-end gap-1">
+              <div className="bg-neutral-800 text-white rounded-full rounded-br-md px-3 sm:px-4 py-2 sm:py-2">
+                <div className="whitespace-pre-wrap break-words text-sm sm:text-base">{message.content}</div>
+              </div>
             </div>
             <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center bg-primary text-primary-foreground"><User size={14} className="sm:w-4 sm:h-4"/></div>
           </div>

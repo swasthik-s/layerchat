@@ -78,28 +78,6 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
     setIsGovernanceDropdownOpen(false)
   }
 
-  const getGovernanceIcon = () => {
-    const governance = settings.governance || { mode: 'smart', enabled: true }
-    if (!governance.enabled) return ShieldX
-    switch (governance.mode) {
-      case 'internal': return ShieldX
-      case 'internet': return Shield
-      case 'smart': return ShieldCheck
-      default: return Shield
-    }
-  }
-
-  const getGovernanceColor = () => {
-    const governance = settings.governance || { mode: 'smart', enabled: true }
-    if (!governance.enabled) return 'text-red-500'
-    switch (governance.mode) {
-      case 'internal': return 'text-red-500'
-      case 'internet': return 'text-blue-500'
-      case 'smart': return 'text-green-500'
-      default: return 'text-gray-500'
-    }
-  }
-
   const governanceModes = AIGovernance.getAvailableModes()
 
   return (

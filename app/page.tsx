@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { useRouter, usePathname } from 'next/navigation'
 import { useChatStore } from '@/lib/store'
 import Sidebar from '@/components/sidebar'
 import Header from '@/components/header'
@@ -8,6 +9,8 @@ import Chat from '@/components/chat/chat'
 import { Toaster } from 'react-hot-toast'
 
 export default function Home() {
+  const router = useRouter()
+  const pathname = usePathname()
   const { 
     sidebarOpen, 
     setSidebarOpen, 
@@ -17,12 +20,19 @@ export default function Home() {
     sessions 
   } = useChatStore()
 
-  // Initialize first session if none exists
+  // Initialize first session if none exists, but allow staying on main page for new chats
   useEffect(() => {
-    if (!currentSession && sessions.length === 0) {
-      createNewSession()
+    const initializeChat = async () => {
+      // Only auto-redirect if we have an existing current session and we're not already on the main page
+      // This allows new chat flows to stay on the main page
+      if (currentSession && pathname === '/') {
+        // Don't redirect if we're already on the home page - let user stay for new chat experience
+        return
+      }
     }
-  }, [currentSession, sessions.length, createNewSession])
+
+    initializeChat()
+  }, [currentSession, pathname])
 
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen)

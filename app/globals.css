@@ -13,6 +13,14 @@
   display: inline-block;
 }
 
+.unified-dot.loading {
+  animation: unified-loading 1.2s infinite ease-in-out;
+}
+
+.unified-dot.streaming {
+  animation: unified-streaming 1.5s infinite ease-in-out;
+}
+
 @keyframes unified-loading {
   0%, 100% {
     transform: scale(1);

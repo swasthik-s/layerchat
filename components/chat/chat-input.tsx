@@ -180,7 +180,7 @@ export default function ChatInput({ onSendMessage, disabled = false, isStreaming
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 pb-safe">
       <div className="ml-0 lg:ml-64">
-        <div className="max-w-[768px] mx-auto px-4 pb-4">
+        <div className="max-w-[770px] mx-auto px-4 pb-4">
           {/* ChatGPT-style Input Container */}
           <div className="mb-4 bg-white dark:bg-neutral-800 rounded-md shadow-black dark:border-neutral-600">
             

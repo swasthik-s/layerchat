@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { ChatMessage } from '@/types'
 import { useChatStore } from '@/lib/store'
 import toast from 'react-hot-toast'
@@ -72,12 +73,15 @@ function parseIntelligentResponse(raw: string): {
 interface UseStreamingChatOptions {
   apiEndpoint?: string
   enableStreaming?: boolean
+  chatId?: string
 }
 
 export function useStreamingChat(options: UseStreamingChatOptions = {}) {
+  const router = useRouter()
   const {
     apiEndpoint = '/api/chat/stream',
     enableStreaming = true,
+    chatId
   } = options
 
   const { 
@@ -239,7 +243,7 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
   const sendMessage = useCallback(async (content: string, attachments?: File[]) => {
     if (!content.trim()) return
 
-    // Create user message
+    // Step 1: Create user message and show immediately
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -255,17 +259,176 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
       }))
     }
 
+    // Step 2: Immediately add user message to UI for instant feedback
     addMessage(userMessage)
+    
+    // Step 3: Immediately create AI placeholder and start streaming
+    const assistantMessageId = `assistant-${Date.now()}`
+    const assistantMessage: ChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      type: 'text',
+      timestamp: Date.now(),
+      metadata: { streaming: true, model: selectedModel }
+    }
+    
+    addMessage(assistantMessage)
+    setStreamingMessageId(assistantMessageId)
     setLoading(true)
 
     try {
-      if (enableStreaming && settings.streamResponses) {
-        await handleStreamingResponse(userMessage)
-      } else {
-        await handleRegularResponse(userMessage)
+      let currentChatId = chatId
+
+      // Step 4: Start background chat creation if needed (non-blocking)
+      if (!currentChatId) {
+        fetch('/api/chat/id', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: content.slice(0, 50) + (content.length > 50 ? '...' : ''),
+            model: selectedModel,
+          }),
+        }).then(async (response) => {
+          if (response.ok) {
+            const { id: newChatId } = await response.json()
+            
+            // Update session and sidebar
+            const newSession = {
+              id: newChatId,
+              title: content.slice(0, 50) + (content.length > 50 ? '...' : ''),
+              messages: [userMessage, assistantMessage],
+              model: selectedModel,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            }
+            
+            const { setCurrentSession, sessions } = useChatStore.getState()
+            setCurrentSession(newSession)
+            
+            if (!sessions.find(s => s.id === newChatId)) {
+              useChatStore.setState({ sessions: [newSession, ...sessions] })
+            }
+            
+            // Update URL after streaming starts
+            setTimeout(() => router.replace(`/chat/${newChatId}`), 2000)
+          }
+        }).catch(console.warn)
       }
+
+      // Step 5: Start streaming immediately (priority)
+      if (enableStreaming && settings.streamResponses) {
+        // Update the assistant message directly with streaming content
+        const streamResponse = await fetch('/api/chat/stream', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: {
+              content: content,
+              role: 'user',
+              type: 'text'
+            },
+            model: selectedModel,
+            settings: {},
+          }),
+        })
+
+        if (!streamResponse.ok) {
+          throw new Error(`HTTP error! status: ${streamResponse.status}`)
+        }
+
+        const reader = streamResponse.body?.getReader()
+        const decoder = new TextDecoder()
+
+        if (!reader) {
+          throw new Error('No reader available')
+        }
+
+        let accumulatedContent = ''
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            const chunk = decoder.decode(value, { stream: true })
+            const lines = chunk.split('\n')
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6)
+                if (data === '[DONE]') break
+
+                try {
+                  const parsed = JSON.parse(data)
+                  if (parsed.type === 'content' && parsed.content) {
+                    accumulatedContent += parsed.content
+                    updateMessage(assistantMessageId, {
+                      ...assistantMessage,
+                      content: accumulatedContent,
+                      metadata: { streaming: true, model: selectedModel }
+                    })
+                  } else if (parsed.type === 'done') {
+                    break
+                  } else if (parsed.type === 'error') {
+                    throw new Error(parsed.error || 'Stream error')
+                  }
+                } catch (e) {
+                  // Ignore parsing errors for chunks
+                }
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock()
+        }
+
+        // Mark streaming as complete
+        updateMessage(assistantMessageId, {
+          ...assistantMessage,
+          content: accumulatedContent,
+          metadata: { model: selectedModel }
+        })
+      } else {
+        // Non-streaming response
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: {
+              content: content,
+              role: 'user',
+              type: 'text'
+            },
+            model: selectedModel,
+            settings: {},
+          }),
+        })
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const data = await response.json()
+        updateMessage(assistantMessageId, {
+          ...assistantMessage,
+          content: data.response?.content || 'No response received',
+          metadata: { model: selectedModel }
+        })
+      }
+      
     } catch (error) {
       console.error('Chat error:', error)
+      
+      // Update user message status to error
+      updateMessage(userMessage.id, { 
+        ...userMessage, 
+        metadata: { status: 'error' } 
+      })
       
       const errorMessage: ChatMessage = {
         id: `error-${Date.now()}`,
@@ -282,10 +445,11 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
       setLoading(false)
       setStreamingMessageId(null)
     }
-  }, [addMessage, setLoading, selectedModel, settings, enableStreaming])
+  }, [addMessage, updateMessage, setLoading, selectedModel, settings, enableStreaming, chatId, router])
 
-  const handleStreamingResponse = async (userMessage: ChatMessage) => {
-    const response = await fetch(apiEndpoint, {
+  const handleStreamingResponse = async (userMessage: ChatMessage, dynamicChatId?: string) => {
+    const endpoint = dynamicChatId ? `/api/chat/${dynamicChatId}/stream` : apiEndpoint
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -383,71 +547,68 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
                 updateMessage(assistantMessageId, { content: formattedContent, metadata: { ...messageMetadata, streaming: true, outputMode: mode } })
                 break
               case 'done':
-                let finalContent = accumulatedContent
-                try {
-                  const result = basicFormat(finalContent)
-                  if (result.content.trim()) {
-                    finalContent = result.content
-                    messageMetadata = { ...messageMetadata, confidence: result.confidence, segmentType: result.type }
-                  }
-                } catch {}
-                const modeFinal = messageMetadata?.outputMode || 'AUTO'
-                let responseMode: 'explanatory' | 'formal' | 'concise' = 'concise'
-                let hasStructuredContent = false
-                let initialContent = finalContent
-                const parsed = parseIntelligentResponse(finalContent)
-                responseMode = parsed.mode
-                hasStructuredContent = parsed.hasStructuredContent
+                // Handle MongoDB endpoint response format (only assistant message now)
+                if (chatId && data.assistantMessage) {
+                  // Add only the assistant message from MongoDB to the store
+                  addMessage({
+                    id: data.assistantMessage.id,
+                    role: data.assistantMessage.role,
+                    content: data.assistantMessage.content,
+                    type: data.assistantMessage.type,
+                    timestamp: data.assistantMessage.timestamp,
+                    metadata: {
+                      ...data.assistantMessage.metadata,
+                      streaming: false,
+                      completed: true
+                    },
+                    attachments: data.assistantMessage.attachments || []
+                  })
+                } else {
+                  // Handle regular streaming endpoint
+                  let finalContent = accumulatedContent
+                  try {
+                    const result = basicFormat(finalContent)
+                    if (result.content.trim()) {
+                      finalContent = result.content
+                      messageMetadata = { ...messageMetadata, confidence: result.confidence, segmentType: result.type }
+                    }
+                  } catch {}
+                  const modeFinal = messageMetadata?.outputMode || 'AUTO'
+                  let responseMode: 'explanatory' | 'formal' | 'concise' = 'concise'
+                  let hasStructuredContent = false
+                  let initialContent = finalContent
+                  const parsed = parseIntelligentResponse(finalContent)
+                  responseMode = parsed.mode
+                  hasStructuredContent = parsed.hasStructuredContent
+                  
+                  // Final rich indicators (steps, math, final answer, lists)
+                  const finalRich = /\$\$|\$[^$\n]+\$|\\\(|\\\)|Step\s+1:|Final Answer:|^\d+\.\s|✅/m.test(finalContent)
+                  
+                  initialContent = parsed.cleanedContent
+                  
+                  // Ensure richPreferred is preserved for complex content
+                  const shouldPreferRich = (messageMetadata as any)?.richPreferred || finalRich || 
+                                         hasStructuredContent ||
+                                         messageMetadata?.variant === 'add-details';
+                  
+                  updateMessage(assistantMessageId, { 
+                    content: initialContent, 
+                    metadata: { 
+                      ...messageMetadata, 
+                      outputMode: responseMode.toUpperCase(), 
+                      responseMode,
+                      streaming: false, 
+                      completed: true, 
+                      hasStructuredContent,
+                      showExplanation: responseMode === 'explanatory' || responseMode === 'formal', 
+                      richPreferred: shouldPreferRich 
+                    } 
+                  })
+                }
                 
-                // Final rich indicators (steps, math, final answer, lists)
-                const finalRich = /\$\$|\$[^$\n]+\$|\\\(|\\\)|Step\s+1:|Final Answer:|^\d+\.\s|✅/m.test(finalContent)
-                
-                // DEBUG: Log content analysis
-                console.log('🔍 Content analysis for final update:', {
-                  modeFinal,
-                  responseMode,
-                  finalContentLength: finalContent.length,
-                  hasStructuredContent,
-                  finalRich,
-                  contentPreview: finalContent.substring(0, 200)
-                });
-                
-                initialContent = parsed.cleanedContent
                 rawBufferRef.current = ''
                 lastFormatLenRef.current = 0
                 setSearchPhase(null) // Clear search phase when done
-                
-                // DEBUG: Log final message update
-                console.log('🎯 Final message update:', {
-                  messageId: assistantMessageId,
-                  contentLength: initialContent.length,
-                  responseMode,
-                  hasStructuredContent,
-                  richPreferred: (messageMetadata as any)?.richPreferred || finalRich,
-                  finalRich,
-                  hasSteps: /Step\s+1:|^\d+\.\s/.test(initialContent),
-                  hasMath: /\$\$|\$[^$\n]+\$/.test(initialContent),
-                  contentPreview: initialContent.substring(0, 200)
-                });
-                
-                // Ensure richPreferred is preserved for complex content
-                const shouldPreferRich = (messageMetadata as any)?.richPreferred || finalRich || 
-                                       hasStructuredContent ||
-                                       messageMetadata?.variant === 'add-details';
-                
-                updateMessage(assistantMessageId, { 
-                  content: initialContent, 
-                  metadata: { 
-                    ...messageMetadata, 
-                    outputMode: responseMode.toUpperCase(), 
-                    responseMode,
-                    streaming: false, 
-                    completed: true, 
-                    hasStructuredContent,
-                    showExplanation: responseMode === 'explanatory' || responseMode === 'formal', 
-                    richPreferred: shouldPreferRich 
-                  } 
-                })
                 break
               case 'error':
                 throw new Error(data.error)
@@ -459,11 +620,25 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
       }
     } finally {
       reader.releaseLock()
+      setStreamingMessageId(null)
+      
+      // Handle URL update for new chats after streaming is complete
+      const { messages } = useChatStore.getState()
+      const userMsg = messages.find((m: ChatMessage) => m.role === 'user' && m.metadata?.pendingChatId)
+      if (userMsg?.metadata?.pendingChatId && !chatId) {
+        // Clear the pending flag and update URL
+        updateMessage(userMsg.id, { 
+          ...userMsg, 
+          metadata: {} 
+        })
+        router.replace(`/chat/${userMsg.metadata.pendingChatId}`)
+      }
     }
   }
 
-  const handleRegularResponse = async (userMessage: ChatMessage) => {
-    const response = await fetch('/api/chat', {
+  const handleRegularResponse = async (userMessage: ChatMessage, dynamicChatId?: string) => {
+    const endpoint = dynamicChatId ? `/api/chat/${dynamicChatId}` : '/api/chat'
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -97,6 +97,49 @@ export interface ChatSession {
   }
 }
 
+// MongoDB Chat Document Interface
+export interface ChatDocument {
+  _id?: string
+  id: string
+  title: string
+  model: string
+  createdAt: number
+  updatedAt: number
+  metadata?: {
+    [key: string]: any
+  }
+}
+
+// MongoDB Message Document Interface
+export interface MessageDocument {
+  _id?: string
+  id: string
+  chatId: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  type: 'text' | 'image' | 'video' | 'code' | 'file'
+  timestamp: number
+  metadata?: {
+    model?: string
+    agent?: string
+    tokens?: number
+    responseMode?: 'explanatory' | 'formal' | 'concise'
+    outputMode?: string
+    hasStructuredContent?: boolean
+    richPreferred?: boolean
+    streaming?: boolean
+    completed?: boolean
+    variant?: 'add-details' | 'more-concise'
+    showExplanation?: boolean
+    confidence?: number
+    segmentType?: string
+    error?: boolean
+    stopped?: boolean
+    [key: string]: any
+  }
+  attachments?: MessageAttachment[]
+}
+
 // Model Provider Configuration
 export interface ModelProvider {
   name: string

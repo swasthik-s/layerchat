@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
-import { getChatCollection, getMessagesCollection } from '@/lib/mongodb'
 
 // POST - Add a new message to the chat
 export async function POST(request: NextRequest, context: any) {
   try {
+    // Lazy import MongoDB to avoid build-time errors
+    const { getChatCollection, getMessagesCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
+    
+    if (!isMongoDBAvailable()) {
+      return NextResponse.json(
+        { error: 'MongoDB is not configured' },
+        { status: 500 }
+      )
+    }
+
     const { id: chatId } = await context.params
     const body = await request.json()
     const { role, content, type = 'text', metadata = {}, attachments = [] } = body
@@ -68,6 +77,13 @@ export async function POST(request: NextRequest, context: any) {
 // GET - Get all messages for a chat
 export async function GET(request: NextRequest, context: any) {
   try {
+    // Lazy import MongoDB to avoid build-time errors
+    const { getMessagesCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
+    
+    if (!isMongoDBAvailable()) {
+      return NextResponse.json({ messages: [] })
+    }
+
     const { id: chatId } = context.params
     
     const messagesCollection = await getMessagesCollection()

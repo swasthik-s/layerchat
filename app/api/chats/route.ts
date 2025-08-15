@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getChatCollection } from '@/lib/mongodb'
 
 // GET - List all chats (for sidebar)
 export async function GET(request: NextRequest) {
   try {
+    // Lazy import MongoDB to avoid build-time errors
+    const { getChatCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
+    
+    if (!isMongoDBAvailable()) {
+      return NextResponse.json({ chats: [] })
+    }
+
     const chatCollection = await getChatCollection()
     
     const chats = await chatCollection

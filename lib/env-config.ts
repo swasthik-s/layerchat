@@ -244,7 +244,7 @@ export const config: AppConfig = {
 
   // Database
   mongodb: {
-    uri: getRequiredEnvVar('MONGODB_URI'),
+    uri: getOptionalEnvVar('MONGODB_URI') || '',
     db: getOptionalEnvVar('MONGODB_DB', 'layerchat') || 'layerchat',
     maxPoolSize: getNumberEnvVar('MONGODB_MAX_POOL_SIZE', 10),
     minPoolSize: getNumberEnvVar('MONGODB_MIN_POOL_SIZE', 5),
@@ -384,8 +384,10 @@ export function validateConfig(): void {
   if (!config.nextAuthSecret) {
     errors.push('NEXTAUTH_SECRET is required')
   }
-  if (!config.mongodb.uri) {
-    errors.push('MONGODB_URI is required')
+  
+  // MongoDB is optional during build time, only warn in production
+  if (!config.mongodb.uri && process.env.NODE_ENV === 'production') {
+    console.warn('⚠️ MONGODB_URI not configured - MongoDB features will be disabled')
   }
 
   // Check if at least one AI provider is configured

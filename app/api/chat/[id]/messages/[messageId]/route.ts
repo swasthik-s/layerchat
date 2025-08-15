@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getMessagesCollection, getChatCollection } from '@/lib/mongodb'
 
 // DELETE - Delete a specific message
 export async function DELETE(request: NextRequest, context: any) {
   try {
+    // Lazy import MongoDB to avoid build-time errors
+    const { getMessagesCollection, getChatCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
+    
+    if (!isMongoDBAvailable()) {
+      return NextResponse.json(
+        { error: 'MongoDB is not configured' },
+        { status: 500 }
+      )
+    }
+
     const { id: chatId, messageId } = context.params
     
     const messagesCollection = await getMessagesCollection()
@@ -42,6 +51,16 @@ export async function DELETE(request: NextRequest, context: any) {
 // PUT - Update a specific message
 export async function PUT(request: NextRequest, context: any) {
   try {
+    // Lazy import MongoDB to avoid build-time errors
+    const { getMessagesCollection, getChatCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
+    
+    if (!isMongoDBAvailable()) {
+      return NextResponse.json(
+        { error: 'MongoDB is not configured' },
+        { status: 500 }
+      )
+    }
+
     const { id: chatId, messageId } = context.params
     const body = await request.json()
     const { content, metadata } = body

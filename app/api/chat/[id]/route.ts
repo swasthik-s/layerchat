@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getChatCollection, getMessagesCollection } from '@/lib/mongodb'
 
 // GET - Retrieve a chat and its messages
 export async function GET(request: NextRequest, context: any) {
   try {
+    // Lazy import MongoDB to avoid build-time errors
+    const { getChatCollection, getMessagesCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
+    
+    if (!isMongoDBAvailable()) {
+      return NextResponse.json(
+        { error: 'MongoDB is not configured' },
+        { status: 500 }
+      )
+    }
+
     const { id } = await context.params
     
     const chatCollection = await getChatCollection()
@@ -57,6 +66,16 @@ export async function GET(request: NextRequest, context: any) {
 // PUT - Update chat title or metadata
 export async function PUT(request: NextRequest, context: any) {
   try {
+    // Lazy import MongoDB to avoid build-time errors
+    const { getChatCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
+    
+    if (!isMongoDBAvailable()) {
+      return NextResponse.json(
+        { error: 'MongoDB is not configured' },
+        { status: 500 }
+      )
+    }
+
     const { id } = await context.params
     const body = await request.json()
     const { title, metadata } = body
@@ -96,6 +115,16 @@ export async function PUT(request: NextRequest, context: any) {
 // DELETE - Delete a chat and all its messages
 export async function DELETE(request: NextRequest, context: any) {
   try {
+    // Lazy import MongoDB to avoid build-time errors
+    const { getChatCollection, getMessagesCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
+    
+    if (!isMongoDBAvailable()) {
+      return NextResponse.json(
+        { error: 'MongoDB is not configured' },
+        { status: 500 }
+      )
+    }
+
     const { id } = await context.params
     
     const chatCollection = await getChatCollection()

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Orchestrator } from '@/app/orchestrator'
 import { ChatMessage } from '@/types'
-import { getChatCollection, getMessagesCollection } from '@/lib/mongodb'
 import { v4 as uuidv4 } from 'uuid'
 
 // Create a global orchestrator instance
@@ -14,6 +13,9 @@ const orchestrator = new Orchestrator({
 
 export async function POST(request: NextRequest, context: any) {
   try {
+    // Lazy import MongoDB to avoid build-time errors
+    const { getChatCollection, getMessagesCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
+    
     const { id: chatId } = await context.params
     const body = await request.json()
     const { message, model, settings } = body

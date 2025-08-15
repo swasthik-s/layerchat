@@ -20,6 +20,8 @@ COPY . .
 # Set environment variables for build
 ENV NEXT_TELEMETRY_DISABLED 1
 ENV NODE_ENV production
+ENV MONGODB_URI ""
+ENV NEXTAUTH_SECRET "build-time-secret"
 
 # Build the application
 RUN bun run build

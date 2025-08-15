@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
-import { getChatCollection } from '@/lib/mongodb'
 
 export async function POST(request: NextRequest) {
   try {
+    // Lazy import MongoDB to avoid build-time errors
+    const { getChatCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
+    
+    if (!isMongoDBAvailable()) {
+      return NextResponse.json(
+        { error: 'MongoDB is not configured' },
+        { status: 500 }
+      )
+    }
+
     const body = await request.json()
     const { title, model } = body
 

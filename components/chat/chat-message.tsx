@@ -8,6 +8,7 @@ import { useStreamingChat } from '@/hooks/useStreamingChat'
 import TextRender from '../TextRender'
 import { useRouter } from 'next/navigation'
 import { ModelIcon } from '@/components/ui/model-icons'
+import { SourcesSidebar } from '@/components/ui/SourcesSidebar'
 
 // Helper function to get provider from model name
 function getProviderFromModel(modelName: string): string {
@@ -24,7 +25,11 @@ interface ChatMessageProps {
   isStreamingMessage?: boolean
 }
 
-const ActionButtons = ({ message }: { message: ChatMessageType }) => {
+const ActionButtons = ({ message, sourcesSidebarOpen, setSourcesSidebarOpen }: { 
+  message: ChatMessageType;
+  sourcesSidebarOpen: boolean;
+  setSourcesSidebarOpen: (open: boolean) => void;
+}) => {
   const [copied, setCopied] = useState(false)
   const { deleteMessage, currentSession } = useChatStore()
   const router = useRouter()
@@ -47,37 +52,73 @@ const ActionButtons = ({ message }: { message: ChatMessageType }) => {
     }
   }
 
-  return (
-    <div className="flex items-center gap-1 mt-2">
-      <Button variant="ghost" size="sm" onClick={copy} className="h-7 px-2 text-xs hover:bg-muted" title={copied? 'Copied!' : 'Copy response'}><Copy size={12}/></Button>
-      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs hover:bg-muted hover:text-green-600" title="Good response"><ThumbsUp size={12}/></Button>
-      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs hover:bg-muted hover:text-red-600" title="Poor response"><ThumbsDown size={12}/></Button>
-      <Button variant="ghost" size="sm" onClick={()=>{ if('speechSynthesis' in window){ speechSynthesis.speak(new SpeechSynthesisUtterance(message.content)) } }} className="h-7 px-2 text-xs hover:bg-muted" title="Read aloud"><Volume2 size={12}/></Button>
-      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs hover:bg-muted" title="Share response" onClick={()=>{ if(navigator.share){ navigator.share({title:'AI Response', text: message.content}) } else copy() }}><Share size={12}/></Button>
-      <Button variant="ghost" size="sm" onClick={handleDelete} className="h-7 px-2 text-xs hover:bg-muted hover:text-red-600" title="Delete message"><Trash2 size={12}/></Button>
+  // Check if message has sources
+  const hasSources = message.metadata?.sources && message.metadata.sources.length > 0
 
-      <DropdownMenu.Root>
-        <DropdownMenu.Trigger asChild>
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs hover:bg-muted" title="Regenerate"><RefreshCw size={12}/></Button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Content side="top" align="start" className="z-50 min-w-[220px] rounded-md border bg-popover text-popover-foreground shadow-md outline-none p-1">
-          <div className="px-2 py-1.5 text-xs text-muted-foreground">Ask to change response</div>
-          <div className="h-px bg-border my-1" />
-          <DropdownMenu.Item className="cursor-pointer select-none rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground" onSelect={(e)=>{ e.preventDefault(); handleRegenerate('add-details') }}>Add details</DropdownMenu.Item>
-          <DropdownMenu.Item className="cursor-pointer select-none rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground" onSelect={(e)=>{ e.preventDefault(); handleRegenerate('more-concise') }}>More concise</DropdownMenu.Item>
-        </DropdownMenu.Content>
-      </DropdownMenu.Root>
-    </div>
+  return (
+    <>
+      <div className="flex items-center gap-1 mt-2">
+        <Button variant="ghost" size="sm" onClick={copy} className="h-7 px-2 text-xs hover:bg-muted" title={copied? 'Copied!' : 'Copy response'}><Copy size={12}/></Button>
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs hover:bg-muted hover:text-green-600" title="Good response"><ThumbsUp size={12}/></Button>
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs hover:bg-muted hover:text-red-600" title="Poor response"><ThumbsDown size={12}/></Button>
+        <Button variant="ghost" size="sm" onClick={()=>{ if('speechSynthesis' in window){ speechSynthesis.speak(new SpeechSynthesisUtterance(message.content)) } }} className="h-7 px-2 text-xs hover:bg-muted" title="Read aloud"><Volume2 size={12}/></Button>
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs hover:bg-muted" title="Share response" onClick={()=>{ if(navigator.share){ navigator.share({title:'AI Response', text: message.content}) } else copy() }}><Share size={12}/></Button>
+        {hasSources && (
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setSourcesSidebarOpen(true)}
+            className="h-7 px-2 text-xs hover:bg-muted" 
+            title="View sources"
+          >
+            <Search size={12}/>
+          </Button>
+        )}
+        <Button variant="ghost" size="sm" onClick={handleDelete} className="h-7 px-2 text-xs hover:bg-muted hover:text-red-600" title="Delete message"><Trash2 size={12}/></Button>
+
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs hover:bg-muted" title="Regenerate"><RefreshCw size={12}/></Button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Content side="top" align="start" className="z-50 min-w-[220px] rounded-md border bg-popover text-popover-foreground shadow-md outline-none p-1">
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">Ask to change response</div>
+            <div className="h-px bg-border my-1" />
+            <DropdownMenu.Item className="cursor-pointer select-none rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground" onSelect={(e)=>{ e.preventDefault(); handleRegenerate('add-details') }}>Add details</DropdownMenu.Item>
+            <DropdownMenu.Item className="cursor-pointer select-none rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground" onSelect={(e)=>{ e.preventDefault(); handleRegenerate('more-concise') }}>More concise</DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Root>
+      </div>
+
+      {/* Sources Sidebar */}
+      <SourcesSidebar 
+        sources={message.metadata?.sources || []}
+        isOpen={sourcesSidebarOpen}
+        onClose={() => setSourcesSidebarOpen(false)}
+      />
+    </>
   )
 }
 
 export default function ChatMessage({ message, searchPhase, isStreamingMessage }: ChatMessageProps) {
   const [imageError, setImageError] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [sourcesSidebarOpen, setSourcesSidebarOpen] = useState(false)
   const { isStreaming, streamingMessageId } = useStreamingChat()
   const { selectedProvider, selectedModel } = useChatStore()
   const isUser = message.role === 'user'
   const isCurrentlyStreaming = isStreaming && streamingMessageId === message.id
+
+  // Handle source citation clicks
+  const handleSourceClick = (sourceId: string) => {
+    setSourcesSidebarOpen(true)
+    // Optionally scroll to the specific source in the sidebar
+    setTimeout(() => {
+      const sourceElement = document.querySelector(`[data-source-id="${sourceId}"]`)
+      if (sourceElement) {
+        sourceElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 100)
+  }
   
   // Debug log for search phase - temporary
   React.useEffect(() => {
@@ -223,6 +264,8 @@ export default function ChatMessage({ message, searchPhase, isStreamingMessage }
                         isStreaming={isCurrentlyStreaming || message.metadata?.streaming || false}
                         useTypewriter={true}
                         isSearching={!!searchPhase && searchPhase.phase === 'searching'}
+                        sources={message.metadata?.sources}
+                        onSourceClick={handleSourceClick}
                       />
                     </div>
                     })()
@@ -243,7 +286,13 @@ export default function ChatMessage({ message, searchPhase, isStreamingMessage }
             ): null}
             {message.metadata?.agentData && message.metadata?.agent && agentBlock(message.metadata.agentData, message.metadata.agent)}
             {/* Only show action buttons when streaming is completely finished */}
-            {!message.metadata?.streaming && !isCurrentlyStreaming && <ActionButtons message={message} />}
+            {!message.metadata?.streaming && !isCurrentlyStreaming && (
+              <ActionButtons 
+                message={message} 
+                sourcesSidebarOpen={sourcesSidebarOpen}
+                setSourcesSidebarOpen={setSourcesSidebarOpen}
+              />
+            )}
           </div>
         )}
         

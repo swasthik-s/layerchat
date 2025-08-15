@@ -1,52 +1,99 @@
-// Adaptive style utilities: classify prompt category and generate dynamic greeting variants.
+// Autonomous interaction utilities - natural conversation flow without hardcoded responses
 
-const GREETING_REGEX = /^(hi|hey|hello|yo|sup|hiya|hi there|hey there|good (morning|afternoon|evening))[!. ]*$/i;
+export type InteractionContext = 'greeting' | 'learning' | 'problem_solving' | 'technical' | 'creative' | 'conversational';
 
-export type PromptCategory = 'greeting' | 'simple' | 'complex' | 'math' | 'code' | 'creative' | 'other';
-
-export function classifyPrompt(prompt: string): PromptCategory {
-  const p = prompt.trim();
-  if (!p) return 'other';
-  if (GREETING_REGEX.test(p)) return 'greeting';
-  if (/\b(calculate|convert|percent|sum|solve|derivative|integral|=)\b/i.test(p) && p.length < 120) return 'math';
-  if (/\b(function|class|react|typescript|code|bug|error|stack trace|compile)\b/i.test(p)) return 'code';
-  if (/\b(story|poem|brainstorm|ideas|creative|metaphor)\b/i.test(p)) return 'creative';
-  // Simple factual if short and a single sentence
-  if (p.length < 60 && !/[?].*[?]/.test(p) && /\b(what|who|when|where|why|how)\b/i.test(p)) return 'simple';
-  // Complex if long or multi-question
-  if (p.length > 180 || /\?+.*\?+/.test(p)) return 'complex';
-  return 'other';
+export function analyzeInteractionContext(prompt: string): InteractionContext {
+  const p = prompt.trim().toLowerCase();
+  if (!p) return 'conversational';
+  
+  // Natural greeting detection (but AI will respond authentically)
+  if (/^(hi|hey|hello|yo|sup|hiya|hi there|hey there|good (morning|afternoon|evening))[!. ]*$/i.test(p)) {
+    return 'greeting';
+  }
+  
+  // Learning context - user wants to understand something
+  if (/\b(explain|understand|learn|teach|how does|why does|what is|help me understand)\b/i.test(p)) {
+    return 'learning';
+  }
+  
+  // Problem-solving context - user has a specific challenge
+  if (/\b(solve|fix|debug|error|problem|issue|stuck|calculate|build|implement)\b/i.test(p)) {
+    return 'problem_solving';
+  }
+  
+  // Technical context - code, systems, technical discussions
+  if (/\b(function|class|react|typescript|code|api|database|server|deploy|docker)\b/i.test(p)) {
+    return 'technical';
+  }
+  
+  // Creative context - brainstorming, ideas, creative work
+  if (/\b(story|poem|brainstorm|ideas|creative|design|metaphor|imagine)\b/i.test(p)) {
+    return 'creative';
+  }
+  
+  return 'conversational';
 }
 
-// Greeting variant generator with rotation to reduce repetition
-const openerPool = [
-  'Hey', 'Hi', 'Hello', 'Hey there', 'Hi there', 'Yo', 'Welcome', 'Good to see you'
-];
-const followPool = [
-  'what can I do for you today?',
-  'what shall we tackle?',
-  'need a quick answer or something deeper?',
-  'ready to dive into something?',
-  'what are you working on?',
-  'how can I help right now?',
-  'looking to build, fix, or explore?',
-  'want to ship something faster today?'
-];
-
-interface UsedPair { o: string; f: string }
-const recent: UsedPair[] = [];
-const RECENT_LIMIT = 10;
-
-function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
-
-export function generateGreetingVariant(): { hint: string; opener: string; follow: string } {
-  let attempts = 0;
-  let o = pick(openerPool), f = pick(followPool);
-  while (attempts < 20 && recent.find(r => r.o === o && r.f === f)) {
-    o = pick(openerPool); f = pick(followPool); attempts++;
+/**
+ * Provides natural context guidance for autonomous AI responses
+ * Instead of prescriptive templates, gives the AI situational awareness
+ */
+export function getContextualGuidance(context: InteractionContext): string {
+  switch (context) {
+    case 'greeting':
+      return 'CONTEXT: User is greeting you. Respond naturally and warmly as an intelligent assistant would, then smoothly transition to being helpful. Be authentic - no forced templates.';
+    
+    case 'learning':
+      return 'CONTEXT: User wants to learn or understand something. Use your teaching expertise to explain clearly with examples and analogies when helpful. Gauge their level and adapt accordingly.';
+    
+    case 'problem_solving':
+      return 'CONTEXT: User has a specific problem to solve. Focus on practical solutions, break down complex problems logically, and provide actionable guidance. Think step-by-step when helpful.';
+    
+    case 'technical':
+      return 'CONTEXT: Technical discussion. Leverage your expertise appropriately, provide working examples when relevant, and ensure accuracy. Match their technical level naturally.';
+    
+    case 'creative':
+      return 'CONTEXT: Creative or brainstorming session. Be imaginative and engaging while staying helpful. Encourage their creativity and offer diverse perspectives.';
+    
+    case 'conversational':
+    default:
+      return 'CONTEXT: General conversation. Respond naturally based on what they need. Use your intelligence to determine the best approach for this specific interaction.';
   }
-  recent.push({ o, f });
-  if (recent.length > RECENT_LIMIT) recent.shift();
-  const hint = `GREETING_VARIANT: opener="${o}" follow="${f}" -> Respond as ONE natural sentence combining them (<=18 words), warm & human, no repetition.`;
-  return { hint, opener: o, follow: f };
+}
+
+/**
+ * Generate natural conversation guidance instead of hardcoded responses
+ * Helps AI understand the interaction flow without constraining responses
+ */
+export function generateNaturalGuidance(prompt: string): { context: InteractionContext; guidance: string; naturalFlow: string } {
+  const context = analyzeInteractionContext(prompt);
+  const guidance = getContextualGuidance(context);
+  
+  // Natural flow guidance based on interaction type
+  let naturalFlow = '';
+  switch (context) {
+    case 'greeting':
+      naturalFlow = 'Flow: Warm acknowledgment → Express readiness to help → Optionally ask what they\'d like to work on (but only if it feels natural)';
+      break;
+    case 'learning':
+      naturalFlow = 'Flow: Understand their current level → Explain clearly with examples → Check understanding when appropriate';
+      break;
+    case 'problem_solving':
+      naturalFlow = 'Flow: Understand the problem → Break down approach → Provide solution with reasoning → Offer next steps if helpful';
+      break;
+    case 'technical':
+      naturalFlow = 'Flow: Assess technical context → Provide accurate technical guidance → Include practical examples → Consider edge cases when relevant';
+      break;
+    case 'creative':
+      naturalFlow = 'Flow: Understand creative direction → Offer diverse ideas → Build on their concepts → Encourage exploration';
+      break;
+    default:
+      naturalFlow = 'Flow: Understand intent → Provide helpful response → Adapt naturally to conversation needs';
+  }
+  
+  return { 
+    context, 
+    guidance, 
+    naturalFlow: `NATURAL_FLOW: ${naturalFlow}. Remember: be authentic and use your judgment about what's most helpful.`
+  };
 }

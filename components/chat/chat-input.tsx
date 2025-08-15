@@ -371,7 +371,7 @@ export default function ChatInput({ onSendMessage, disabled = false, isStreaming
                 {isStreaming ? (
                   <Button
                     onClick={onStopGeneration}
-                    className="h-8 w-8 sm:h-10 sm:w-10 rounded-full flex-shrink-0"
+                    className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-neutral-900 hover:bg-neutral-800 dark:bg-neutral-600 dark:hover:bg-neutral-500 flex-shrink-0"
                     size="icon"
                   >
                     <Square size={14} className="sm:w-[18px] sm:h-[18px] text-white" />

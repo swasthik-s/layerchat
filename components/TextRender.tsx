@@ -10,7 +10,22 @@ import remarkRehype from 'remark-rehype';
 import rehypeKatex from 'rehype-katex';
 import rehypeStringify from 'rehype-stringify';
 import SearchStatus from '@/components/ui/SearchStatus';
+import Citation from '@/components/ui/Citation';
 import 'katex/dist/katex.min.css';
+
+export interface Source {
+  id: number;
+  title: string;
+  url: string;
+  snippet: string;
+  date?: string;
+}
+
+export interface CitationData {
+  url: string;
+  text: string;
+  id: string;
+}
 
 export interface TextRenderProps { 
   content: string; 
@@ -18,6 +33,8 @@ export interface TextRenderProps {
   isStreaming?: boolean;
   useTypewriter?: boolean;
   isSearching?: boolean; // Add this to hide dot during search
+  sources?: Source[]; // Kept for backward compatibility but not used
+  onSourceClick?: (sourceId: string) => void; // Kept for backward compatibility but not used
 }
 
 // Auto-detect math patterns in AI responses
@@ -100,6 +117,65 @@ function processTextWithMath(text: string): string {
     console.error('Error in processTextWithMath:', error);
     return text; // Return original text if processing fails
   }
+}
+
+// Extract citations from HTML and prepare for React rendering
+function extractCitations(html: string): { html: string; citations: CitationData[] } {
+  const citations: CitationData[] = [];
+  let citationCounter = 0;
+  
+  // Replace <a> tags with placeholder and collect citation data
+  const processedHtml = html.replace(/<a\s+[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([^<]+)<\/a>/gi, (match, url, text) => {
+    // Clean up URL and text
+    url = url.trim();
+    text = text.trim();
+    
+    // Skip if empty or too long (avoid processing navigation links)
+    if (!url || !text || text.length > 100) {
+      return match;
+    }
+    
+    // Skip obvious non-citation links
+    if (text.toLowerCase().includes('click here') || 
+        text.toLowerCase().includes('read more') || 
+        text.toLowerCase().includes('learn more')) {
+      return match;
+    }
+    
+    // Create unique ID for this citation
+    const citationId = `citation-${citationCounter++}`;
+    
+    // Store citation data
+    citations.push({
+      url,
+      text,
+      id: citationId
+    });
+    
+    // Return simple text placeholder that won't interfere with HTML structure
+    return `__CITATION_PLACEHOLDER_${citationId}__`;
+  });
+  
+  return { html: processedHtml, citations };
+}
+
+// Function to render content with React Citation components
+function renderWithCitations(html: string, citations: CitationData[]): React.ReactNode {
+  if (citations.length === 0) {
+    return <div dangerouslySetInnerHTML={{ __html: html }} />;
+  }
+  
+  // Simple approach: use string replacement to inject citation HTML directly
+  let processedHtml = html;
+  
+  citations.forEach((citation) => {
+    const placeholder = `__CITATION_PLACEHOLDER_${citation.id}__`;
+    // Create inline citation HTML that matches the Citation component styling
+    const citationHtml = `<a href="${citation.url}" target="_blank" rel="noopener noreferrer" class="inline-block bg-neutral-700 text-neutral-400 border rounded-full px-1.5 py-0.5 text-xs font-medium no-underline mx-0.5 leading-tight hover:bg-gray-600 hover:text-gray-300 hover:border-gray-500 transition-all duration-150 cursor-pointer" title="Click to visit ${citation.text}">${citation.text}</a>`;
+    processedHtml = processedHtml.replace(placeholder, citationHtml);
+  });
+  
+  return <div dangerouslySetInnerHTML={{ __html: processedHtml }} />;
 }
 
 // Auto-detect mathematical expressions and convert to markdown math notation
@@ -302,14 +378,22 @@ function wrapLists(html: string): string {
     });
 }
 
-export default function TextRender({ content, className = "", isStreaming = false, useTypewriter = false, isSearching = false }: TextRenderProps) {
+export default function TextRender({ 
+  content, 
+  className = "", 
+  isStreaming = false, 
+  useTypewriter = false, 
+  isSearching = false,
+  sources,
+  onSourceClick 
+}: TextRenderProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const lastProcessedContentRef = useRef<string>('');
-  const lastProcessedResultRef = useRef<string>('');
+  const lastProcessedResultRef = useRef<{ html: string; citations: CitationData[] } | null>(null);
   const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const processedContent = useMemo(() => {
-    if (!content) return '';
+    if (!content) return { html: '', citations: [] };
     
     // Skip reprocessing if content hasn't actually changed (optimization for streaming)
     if (content === lastProcessedContentRef.current && lastProcessedResultRef.current) {
@@ -323,26 +407,33 @@ export default function TextRender({ content, className = "", isStreaming = fals
       
       // Only reprocess if significant content has been added or streaming stopped
       if (contentLength - lastLength < 50 && isStreaming) {
-        return lastProcessedResultRef.current || content.replace(/\n/g, '<br/>');
+        return lastProcessedResultRef.current || { html: content.replace(/\n/g, '<br/>'), citations: [] };
       }
     }
     
     try {
       // Step 1: Convert AI output to markdown format (with math detection and Mistral LaTeX conversion)
       let processed = processTextWithMath(content);
+      console.log('📝 Step 1 - processTextWithMath result length:', processed.length);
       
-      // Step 2: Use remark.js to convert markdown to HTML
+      // Step 2: Use remark.js to convert markdown to HTML (this will convert [Text](URL) to <a> tags)
       processed = formatMarkdown(processed);
+      console.log('📝 Step 2 - formatMarkdown result length:', processed.length);
+      console.log('📝 Step 2 - formatMarkdown sample:', processed.substring(0, 300));
+      
+      // Step 3: Extract citations from HTML
+      const result = extractCitations(processed);
+      console.log('📝 Step 3 - extractCitations found:', result.citations.length, 'citations');
       
       // Cache the result
       lastProcessedContentRef.current = content;
-      lastProcessedResultRef.current = processed;
+      lastProcessedResultRef.current = result;
       
-      return processed;
+      return result;
     } catch (error) {
       console.error('TextRender processing error:', error);
       // Ultimate fallback
-      const fallback = content.replace(/\n/g, '<br/>');
+      const fallback = { html: content.replace(/\n/g, '<br/>'), citations: [] };
       lastProcessedContentRef.current = content;
       lastProcessedResultRef.current = fallback;
       return fallback;
@@ -358,11 +449,10 @@ export default function TextRender({ content, className = "", isStreaming = fals
     };
   }, []);
 
-  // Post-render effect to ensure block math display
+  // KaTeX processing effect
   useEffect(() => {
     if (!containerRef.current) return;
-
-    // Find all KaTeX elements and ensure proper display mode
+    
     const katexElements = containerRef.current.querySelectorAll('.katex');
     
     katexElements.forEach((element) => {
@@ -446,12 +536,13 @@ export default function TextRender({ content, className = "", isStreaming = fals
     );
   }
   
-  // When not streaming, show fully formatted HTML with math rendering
+  // When not streaming, show fully formatted content with React Citation components
   return (
     <div 
       ref={containerRef}
       className={`prose prose-invert max-w-none text-render-custom ${className}`}
-      dangerouslySetInnerHTML={{ __html: processedContent }}
-    />
+    >
+      {renderWithCitations(processedContent.html, processedContent.citations)}
+    </div>
   );
 }

@@ -1,3 +1,4 @@
+export const runtime = "nodejs";
 import { NextRequest } from 'next/server'
 import { Orchestrator } from '@/app/orchestrator'
 import { ChatMessage } from '@/types'

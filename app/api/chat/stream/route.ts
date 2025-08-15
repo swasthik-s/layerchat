@@ -4,7 +4,7 @@ import { ChatMessage } from '@/types'
 import { validateConfig } from '@/lib/config'
 import { AIGovernance } from '@/lib/governance'
 
-// Ensure this runs on the Node.js runtime
+// Use Node.js runtime for full compatibility
 export const runtime = 'nodejs'
 
 const orchestrator = new Orchestrator({

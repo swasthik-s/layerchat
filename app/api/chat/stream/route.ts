@@ -4,12 +4,27 @@ import { ChatMessage } from '@/types'
 import { validateConfig } from '@/lib/config'
 import { AIGovernance } from '@/lib/governance'
 
+// Ensure this runs on the Node.js runtime
+export const runtime = 'nodejs'
+
 const orchestrator = new Orchestrator({
   defaultModel: 'GPT-4',
   enableAutoAgents: true,
   maxChainDepth: 3,
   timeout: 30000
 })
+
+// Handle CORS preflight requests
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  })
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -122,11 +137,12 @@ export async function POST(request: NextRequest) {
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
+        'Cache-Control': 'no-cache, no-transform',
         'Connection': 'keep-alive',
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'X-Accel-Buffering': 'no', // Disable nginx buffering
       },
     })
 

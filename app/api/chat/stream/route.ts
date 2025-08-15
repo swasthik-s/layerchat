@@ -10,7 +10,7 @@ export const runtime = 'nodejs'
 const orchestrator = new Orchestrator({
   defaultModel: 'GPT-4',
   enableAutoAgents: true,
-  maxChainDepth: 3,
+  maxChainDepth: 3, 
   timeout: 30000
 })
 

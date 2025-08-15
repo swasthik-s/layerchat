@@ -9,5 +9,10 @@
       "source": "/api/(.*)",
       "destination": "/api/$1"
     }
-  ]
+  ],
+  "build": {
+    "env": {
+      "NEXT_EXPERIMENTAL_STANDALONE": "true"
+    }
+  }
 }

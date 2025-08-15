@@ -12,15 +12,9 @@ const orchestrator = new Orchestrator({
   timeout: 30000
 })
 
-interface RouteParams {
-  params: {
-    id: string
-  }
-}
-
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export async function POST(request: NextRequest, context: any) {
   try {
-    const { id: chatId } = await params
+    const { id: chatId } = await context.params
     const body = await request.json()
     const { message, model, settings } = body
 

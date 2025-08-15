@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getChatCollection, getMessagesCollection } from '@/lib/mongodb'
 
-interface RouteParams {
-  params: {
-    id: string
-  }
-}
-
 // GET - Retrieve a chat and its messages
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, context: any) {
   try {
-    const { id } = await params
+    const { id } = await context.params
     
     const chatCollection = await getChatCollection()
     const messagesCollection = await getMessagesCollection()
@@ -61,9 +55,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // PUT - Update chat title or metadata
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export async function PUT(request: NextRequest, context: any) {
   try {
-    const { id } = await params
+    const { id } = await context.params
     const body = await request.json()
     const { title, metadata } = body
     
@@ -100,9 +94,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE - Delete a chat and all its messages
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export async function DELETE(request: NextRequest, context: any) {
   try {
-    const { id } = await params
+    const { id } = await context.params
     
     const chatCollection = await getChatCollection()
     const messagesCollection = await getMessagesCollection()

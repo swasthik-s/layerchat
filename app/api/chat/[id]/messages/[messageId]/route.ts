@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getMessagesCollection, getChatCollection } from '@/lib/mongodb'
 
-// NOTE: For App Router route handlers, Next.js expects the 2nd arg to be an object literal type
-// with a `params` property. Using a custom interface can trigger the “invalid export” type error
-// in strict builds (as seen on Vercel). Use inline typing instead.
-type MessageRouteContext = { params: { id: string; messageId: string } }
-
 // DELETE - Delete a specific message
-export async function DELETE(request: NextRequest, { params }: MessageRouteContext) {
+export async function DELETE(
+  request: NextRequest, 
+  { params }: { params: { id: string; messageId: string } }
+) {
   try {
     const { id: chatId, messageId } = params
     
@@ -45,7 +43,10 @@ export async function DELETE(request: NextRequest, { params }: MessageRouteConte
 }
 
 // PUT - Update a specific message
-export async function PUT(request: NextRequest, { params }: MessageRouteContext) {
+export async function PUT(
+  request: NextRequest, 
+  { params }: { params: { id: string; messageId: string } }
+) {
   try {
     const { id: chatId, messageId } = params
     const body = await request.json()

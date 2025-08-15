@@ -1,13 +1,15 @@
 # Use the official Bun image as base
-FROM oven/bun:1 as base
+FROM oven/bun:1 AS base
 WORKDIR /app
 
 # Install dependencies only when needed
 FROM base AS deps
+WORKDIR /app
+
 # Copy package files
 COPY package.json bun.lockb* ./
-# Install dependencies
-RUN bun install --frozen-lockfile --production=false
+# Install dependencies (including devDependencies for build)
+RUN bun install --frozen-lockfile
 
 # Rebuild the source code only when needed
 FROM base AS builder

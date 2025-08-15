@@ -243,6 +243,12 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
   const sendMessage = useCallback(async (content: string, attachments?: File[]) => {
     if (!content.trim()) return
 
+    console.log('SendMessage called:', { 
+      chatId, 
+      currentSessionId: currentSession?.id, 
+      hasExistingSession: !!currentSession 
+    })
+
     // Step 1: Create user message and show immediately
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -278,10 +284,11 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
     setLoading(true)
 
     try {
-      let currentChatId = chatId
+      let currentChatId = chatId || currentSession?.id
 
-      // Step 4: Start background chat creation if needed (non-blocking)
-      if (!currentChatId) {
+      // Step 4: Only create new chat ID if we don't have one AND we're not in an existing session
+      if (!currentChatId && !currentSession?.id) {
+        console.log('Creating new chat - no existing chatId or session')
         fetch('/api/chat/id', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -357,27 +364,45 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
             const lines = chunk.split('\n')
 
             for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6)
-                if (data === '[DONE]') break
-
-                try {
-                  const parsed = JSON.parse(data)
-                  if (parsed.type === 'content' && parsed.content) {
+              if (!line.startsWith('data: ')) continue
+              const data = line.slice(6)
+              if (data === '[DONE]') break
+              try {
+                const parsed = JSON.parse(data)
+                switch (parsed.type) {
+                  case 'search_phase': {
+                    // New: capture search status for UI indicator
+                    console.log('🔍 HOOK(sendMessage): search_phase event', parsed)
+                    setSearchPhase({ phase: parsed.phase, searchQuery: parsed.searchQuery })
+                    if (parsed.phase === 'complete') {
+                      setTimeout(() => {
+                        // Only clear if unchanged (avoid race with new search)
+                        setSearchPhase(curr => (curr && curr.phase === 'complete') ? null : curr)
+                      }, 1000)
+                    }
+                    break
+                  }
+                  case 'content': {
+                    if (!parsed.content) break
                     accumulatedContent += parsed.content
                     updateMessage(assistantMessageId, {
                       ...assistantMessage,
                       content: accumulatedContent,
                       metadata: { streaming: true, model: selectedModel }
                     })
-                  } else if (parsed.type === 'done') {
                     break
-                  } else if (parsed.type === 'error') {
-                    throw new Error(parsed.error || 'Stream error')
                   }
-                } catch (e) {
-                  // Ignore parsing errors for chunks
+                  case 'done':
+                    // Exit outer loops; let post-loop finalize
+                    break
+                  case 'error':
+                    throw new Error(parsed.error || 'Stream error')
+                  default:
+                    // Ignore other event types silently
+                    break
                 }
+              } catch (e) {
+                // Ignore parse errors for malformed SSE lines
               }
             }
           }
@@ -508,7 +533,16 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
                 messageMetadata = { ...messageMetadata, model: data.model }
                 break
               case 'search_phase':
+                console.log('🔍 HOOK: Search phase received:', data)
                 setSearchPhase({ phase: data.phase, searchQuery: data.searchQuery })
+                // Clear search phase when search is complete - keep it visible longer
+                if (data.phase === 'complete') {
+                  console.log('🔍 HOOK: Search complete, clearing in 1000ms')
+                  setTimeout(() => {
+                    console.log('🔍 HOOK: Actually clearing search phase now')
+                    setSearchPhase(null)
+                  }, 1000) // Longer delay to ensure smooth transition
+                }
                 break
               case 'content':
                 if (!data.content) break
@@ -608,7 +642,7 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
                 
                 rawBufferRef.current = ''
                 lastFormatLenRef.current = 0
-                setSearchPhase(null) // Clear search phase when done
+                // Don't clear search phase here - let it be cleared by the search_phase event
                 break
               case 'error':
                 throw new Error(data.error)

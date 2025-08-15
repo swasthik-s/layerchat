@@ -1,16 +1,29 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { useChatStore } from '@/lib/store'
 import { useStreamingChat } from '@/hooks/useStreamingChat'
 import ChatMessage from './chat-message'
 import ChatInput from './chat-input'
 import { Button } from '@/components/ui/button'
-import { Square } from 'lucide-react'
 
 export default function Chat() {
   const { messages, isLoading, currentSession } = useChatStore()
-  const { sendMessage, stopGeneration, isStreaming, streamingMessageId, searchPhase } = useStreamingChat()
+  const { sendMessage, stopGeneration, isStreaming, streamingMessageId, searchPhase } = useStreamingChat({
+    chatId: currentSession?.id
+  })
+  
+  // Debug search phase
+  React.useEffect(() => {
+    if (searchPhase) {
+      console.log('🔍 CHAT: searchPhase detected!', { 
+        searchPhase, 
+        streamingMessageId,
+        isStreaming 
+      })
+    }
+  }, [searchPhase, streamingMessageId, isStreaming])
+  
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -57,29 +70,17 @@ export default function Chat() {
             </div>
           )}
 
-          {messages.map((message) => (
-            <ChatMessage 
-              key={message.id} 
-              message={message} 
-              searchPhase={searchPhase}
-              isStreamingMessage={message.id === streamingMessageId}
-            />
-          ))}
-          
-          {/* Show stop generation button during streaming */}
-          {isStreaming && (
-            <div className="flex justify-center p-4">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={stopGeneration}
-                className="flex items-center gap-2"
-              >
-                <Square size={12} />
-                Stop generating
-              </Button>
-            </div>
-          )}
+          {messages.map((message) => {
+            const isActive = message.id === streamingMessageId
+            return (
+              <ChatMessage 
+                key={message.id} 
+                message={message} 
+                searchPhase={isActive ? searchPhase : null}
+                isStreamingMessage={isActive}
+              />
+            )
+          })}
           
           {/* Extra padding at bottom to ensure messages don't go behind input */}
           <div className="h-32" />

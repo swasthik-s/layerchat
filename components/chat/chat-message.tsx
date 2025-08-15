@@ -6,8 +6,17 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useChatStore } from '@/lib/store'
 import { useStreamingChat } from '@/hooks/useStreamingChat'
 import TextRender from '../TextRender'
-import SearchStatus from '../ui/SearchStatus'
 import { useRouter } from 'next/navigation'
+import { ModelIcon } from '@/components/ui/model-icons'
+
+// Helper function to get provider from model name
+function getProviderFromModel(modelName: string): string {
+  if (modelName.toLowerCase().includes('gpt') || modelName.toLowerCase().includes('dall')) return 'OpenAI'
+  if (modelName.toLowerCase().includes('claude')) return 'Anthropic'
+  if (modelName.toLowerCase().includes('gemini') || modelName.toLowerCase().includes('palm')) return 'Google'
+  if (modelName.toLowerCase().includes('mistral')) return 'Mistral'
+  return 'OpenAI' // Default fallback
+}
 
 interface ChatMessageProps { 
   message: ChatMessageType
@@ -39,7 +48,7 @@ const ActionButtons = ({ message }: { message: ChatMessageType }) => {
   }
 
   return (
-    <div className="flex items-center gap-1 mt-3">
+    <div className="flex items-center gap-1 mt-2">
       <Button variant="ghost" size="sm" onClick={copy} className="h-7 px-2 text-xs hover:bg-muted" title={copied? 'Copied!' : 'Copy response'}><Copy size={12}/></Button>
       <Button variant="ghost" size="sm" className="h-7 px-2 text-xs hover:bg-muted hover:text-green-600" title="Good response"><ThumbsUp size={12}/></Button>
       <Button variant="ghost" size="sm" className="h-7 px-2 text-xs hover:bg-muted hover:text-red-600" title="Poor response"><ThumbsDown size={12}/></Button>
@@ -66,8 +75,21 @@ export default function ChatMessage({ message, searchPhase, isStreamingMessage }
   const [imageError, setImageError] = useState(false)
   const [copied, setCopied] = useState(false)
   const { isStreaming, streamingMessageId } = useStreamingChat()
+  const { selectedProvider, selectedModel } = useChatStore()
   const isUser = message.role === 'user'
   const isCurrentlyStreaming = isStreaming && streamingMessageId === message.id
+  
+  // Debug log for search phase - temporary
+  React.useEffect(() => {
+    if (searchPhase) {
+      console.log('💬 ChatMessage: searchPhase received!', { 
+        searchPhase, 
+        isCurrentlyStreaming,
+        messageId: message.id,
+        streamingMessageId 
+      })
+    }
+  }, [searchPhase, isCurrentlyStreaming, message.id, streamingMessageId])
   
   // Check if this message is being regenerated - hide during regeneration but show during normal streaming
   const isRegenerating = message.metadata?.regenerating || 
@@ -153,20 +175,17 @@ export default function ChatMessage({ message, searchPhase, isStreamingMessage }
   <div className={`flex py-4 ${isUser ? 'justify-end' : 'justify-start'} group`} data-message-id={message.id}>
       {!isUser && (
         <div className="flex items-start gap-0">
-          <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center bg-muted text-muted-foreground mr-2 sm:mr-3">
-            {agentIcon(message.metadata?.agent)}
-          </div>
-          {/* Show search status inline with avatar for streaming search messages */}
-          {!isUser && isStreamingMessage && searchPhase && searchPhase.phase === 'searching' && (
-            <SearchStatus 
-              phase={searchPhase.phase} 
-              searchQuery={searchPhase.searchQuery}
+          <div className="flex-shrink-0 mr-2 sm:mr-3">
+            <ModelIcon 
+              provider={message.metadata?.model ? getProviderFromModel(message.metadata.model) : selectedProvider} 
+              model={message.metadata?.model || selectedModel}
+              size="sm" 
             />
-          )}
+          </div>
         </div>
       )}
   {/* Remove artificial max-width for assistant messages; keep reasonable limit for user bubbles */}
-  <div className={`${isUser ? 'max-w-[70%] order-1' : 'w-full order-2'} max-w-full mt-1`}> 
+  <div className={`${isUser ? 'max-w-[70%] order-1' : 'w-full order-2'} max-w-full`}> 
         {isUser ? (
           <div className="flex items-end gap-2">
             <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center gap-1 mb-2">
@@ -203,7 +222,7 @@ export default function ChatMessage({ message, searchPhase, isStreamingMessage }
                         content={cleanedContent} 
                         isStreaming={isCurrentlyStreaming || message.metadata?.streaming || false}
                         useTypewriter={true}
-                        isSearching={searchPhase?.phase === 'searching'}
+                        isSearching={!!searchPhase && searchPhase.phase === 'searching'}
                       />
                     </div>
                     })()

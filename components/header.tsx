@@ -7,6 +7,7 @@ import { Menu, Bot, ChevronDown, User, Shield, ShieldCheck, ShieldX } from 'luci
 import { getProviders } from '@/lib/models-config'
 import { useChatStore } from '@/lib/store'
 import { AIGovernance } from '@/lib/governance'
+import { ProviderIcon } from '@/components/ui/model-icons'
 
 
 interface HeaderProps {
@@ -100,7 +101,7 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
             className="flex items-center gap-2"
             onClick={handleDropdownToggle}
           >
-            <Bot size={16} />
+            <ProviderIcon provider={selectedProvider} size="sm" />
             <span className="font-medium">{selectedProvider}</span>
             <ChevronDown size={14} />
           </Button>
@@ -109,9 +110,10 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
               {providers.map((provider) => (
                 <button
                   key={provider}
-                  className={`w-full text-left px-4 py-2 hover:bg-muted ${selectedProvider === provider ? 'bg-muted' : ''}`}
+                  className={`w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2 ${selectedProvider === provider ? 'bg-muted' : ''}`}
                   onClick={() => handleProviderSelect(provider)}
                 >
+                  <ProviderIcon provider={provider} size="sm" />
                   {provider}
                 </button>
               ))}

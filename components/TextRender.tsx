@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useEffect, useRef } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
 import katex from 'katex';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
@@ -9,6 +9,7 @@ import remarkMath from 'remark-math';
 import remarkRehype from 'remark-rehype';
 import rehypeKatex from 'rehype-katex';
 import rehypeStringify from 'rehype-stringify';
+import SearchStatus from './ui/SearchStatus';
 import 'katex/dist/katex.min.css';
 
 export interface TextRenderProps { 
@@ -306,47 +307,64 @@ export default function TextRender({ content, className = "", isStreaming = fals
   const lastProcessedContentRef = useRef<string>('');
   const lastProcessedResultRef = useRef<string>('');
   const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [displayedContent, setDisplayedContent] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
   
-  const processedContent = useMemo(() => {
-    if (!content) return '';
-    
-    // Skip reprocessing if content hasn't actually changed (optimization for streaming)
-    if (content === lastProcessedContentRef.current && lastProcessedResultRef.current) {
-      return lastProcessedResultRef.current;
+  // Debug logging - log ALL prop changes
+  React.useEffect(() => {
+    console.log('🔍 TextRender props:', { 
+      isSearching, 
+      isStreaming, 
+      useTypewriter,
+      contentLength: content?.length,
+      renderMode: isStreaming && useTypewriter ? 'STREAMING' : 
+                  isSearching && !isStreaming ? 'SEARCH_ONLY' : 'STATIC'
+    })
+  }, [isSearching, isStreaming, useTypewriter, content]);
+  
+  // For streaming: create a smooth character-by-character display with basic formatting
+  useEffect(() => {
+    if (isStreaming && useTypewriter && content) {
+      // Apply basic markdown formatting during streaming for better UX
+      let streamingContent = content;
+      
+      // Apply basic formatting that doesn't cause layout shifts
+      streamingContent = streamingContent
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Bold
+        .replace(/\*(.*?)\*/g, '<em>$1</em>') // Italic
+        .replace(/`(.*?)`/g, '<code>$1</code>') // Inline code
+        .replace(/\n\n/g, '<br/><br/>') // Paragraph breaks
+        .replace(/\n/g, '<br/>'); // Line breaks
+      
+      setDisplayedContent(streamingContent);
+      return;
     }
     
-    // During streaming, debounce processing for performance
-    if (isStreaming && content.length > 100) {
-      const contentLength = content.length;
-      const lastLength = lastProcessedContentRef.current.length;
+    if (!isStreaming && content) {
+      // Process fully when streaming is complete
+      setIsProcessing(true);
       
-      // Only reprocess if significant content has been added or streaming stopped
-      if (contentLength - lastLength < 50 && isStreaming) {
-        return lastProcessedResultRef.current || content.replace(/\n/g, '<br/>');
-      }
+      const timeoutId = setTimeout(() => {
+        try {
+          let processed = processTextWithMath(content);
+          processed = formatMarkdown(processed);
+          setDisplayedContent(processed);
+          lastProcessedContentRef.current = content;
+          lastProcessedResultRef.current = processed;
+        } catch (error) {
+          console.error('TextRender processing error:', error);
+          const fallback = content.replace(/\n/g, '<br/>');
+          setDisplayedContent(fallback);
+          lastProcessedContentRef.current = content;
+          lastProcessedResultRef.current = fallback;
+        } finally {
+          setIsProcessing(false);
+        }
+      }, 100); // Small delay to ensure smooth transition
+      
+      return () => clearTimeout(timeoutId);
     }
-    
-    try {
-      // Step 1: Convert AI output to markdown format (with math detection and Mistral LaTeX conversion)
-      let processed = processTextWithMath(content);
-      
-      // Step 2: Use remark.js to convert markdown to HTML
-      processed = formatMarkdown(processed);
-      
-      // Cache the result
-      lastProcessedContentRef.current = content;
-      lastProcessedResultRef.current = processed;
-      
-      return processed;
-    } catch (error) {
-      console.error('TextRender processing error:', error);
-      // Ultimate fallback
-      const fallback = content.replace(/\n/g, '<br/>');
-      lastProcessedContentRef.current = content;
-      lastProcessedResultRef.current = fallback;
-      return fallback;
-    }
-  }, [content, isStreaming]);
+  }, [content, isStreaming, useTypewriter]);
 
   // Cleanup effect
   useEffect(() => {
@@ -357,68 +375,7 @@ export default function TextRender({ content, className = "", isStreaming = fals
     };
   }, []);
 
-  // Post-render effect to ensure block math display
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    // Find all KaTeX elements and ensure proper display mode
-    const katexElements = containerRef.current.querySelectorAll('.katex');
-    
-    katexElements.forEach((element) => {
-      const katexHtml = element.querySelector('.katex-html');
-      
-      // More robust block math detection
-      const hasBlockMathClass = element.classList.contains('katex-display');
-      const hasDisplayAttribute = katexHtml?.hasAttribute('data-display');
-      const isInDisplayWrapper = element.closest('.katex-display-wrapper') !== null;
-      
-      // Check if this contains complex math that should be displayed as block
-      const mathContent = element.textContent || '';
-      const hasComplexMath = mathContent.includes('\\frac') || 
-                           mathContent.includes('\\times') || 
-                           mathContent.includes('\\div') ||
-                           mathContent.includes('=') ||
-                           /\d+\s*\\%/.test(mathContent); // percentage formulas
-      
-      // Check if the original content had $$ delimiters (block math)
-      const isBlockMath = hasBlockMathClass || hasDisplayAttribute || isInDisplayWrapper;
-      
-      if (isBlockMath || hasComplexMath) {
-        // Force block display for complex math or originally block math
-        element.classList.add('katex-display');
-        (element as HTMLElement).style.display = 'block';
-        (element as HTMLElement).style.textAlign = 'left';
-        (element as HTMLElement).style.margin = '1rem 0';
-        (element as HTMLElement).style.padding = '0.5rem 0';
-        (element as HTMLElement).style.background = 'transparent';
-        (element as HTMLElement).style.borderRadius = '0';
-        (element as HTMLElement).style.border = 'none';
-        (element as HTMLElement).style.boxShadow = 'none';
-        (element as HTMLElement).style.width = 'auto';
-        (element as HTMLElement).style.maxWidth = '100%';
-        (element as HTMLElement).style.fontSize = '1.1em';
-        
-        // Ensure parent paragraph uses normal text alignment
-        const parent = element.parentElement;
-        if (parent?.tagName === 'P') {
-          (parent as HTMLElement).style.textAlign = 'left';
-        }
-      } else {
-        // Clean inline display for simple math
-        element.classList.remove('katex-display');
-        (element as HTMLElement).style.display = 'inline';
-        (element as HTMLElement).style.margin = '0 0.1em';
-        (element as HTMLElement).style.padding = '0';
-        (element as HTMLElement).style.background = 'transparent';
-        (element as HTMLElement).style.border = 'none';
-        (element as HTMLElement).style.boxShadow = 'none';
-        (element as HTMLElement).style.fontSize = '1em';
-        (element as HTMLElement).style.verticalAlign = 'baseline';
-      }
-    });
-  }, [processedContent]);
-  
-  // During streaming, show raw content immediately with unified dot cursor (hide dot during search)
+  // During streaming, show raw text with character-by-character reveal
   if (isStreaming && useTypewriter) {
     return (
       <div 
@@ -426,9 +383,19 @@ export default function TextRender({ content, className = "", isStreaming = fals
         className={`prose prose-invert max-w-none text-render-custom ${className}`}
       >
         <div className="inline-block">
-          <span className="whitespace-pre-wrap">{content}</span>
-          {/* Only show streaming dot when not searching */}
-          {!isSearching && (
+          <span 
+            className="whitespace-pre-wrap"
+            style={{
+              fontFamily: 'inherit',
+              fontSize: 'inherit',
+              lineHeight: 'inherit'
+            }}
+            dangerouslySetInnerHTML={{ __html: displayedContent }}
+          />
+          {/* Show search status or streaming dot - direct logic */}
+          {isSearching ? (
+            <SearchStatus phase="searching" />
+          ) : (
             <span
               className="unified-dot streaming"
               style={{
@@ -442,13 +409,31 @@ export default function TextRender({ content, className = "", isStreaming = fals
       </div>
     );
   }
+
+  // If we're searching but not streaming yet, show search status
+  if (isSearching && !isStreaming) {
+    return (
+      <div 
+        ref={containerRef}
+        className={`prose prose-invert max-w-none text-render-custom ${className}`}
+      >
+        <div className="inline-block">
+          <SearchStatus phase="searching" />
+        </div>
+      </div>
+    );
+  }
   
-  // When not streaming, show fully formatted HTML with math rendering
+  // When not streaming, show fully processed and formatted content
   return (
     <div 
       ref={containerRef}
       className={`prose prose-invert max-w-none text-render-custom ${className}`}
-      dangerouslySetInnerHTML={{ __html: processedContent }}
+      style={{
+        opacity: isProcessing ? 0.7 : 1,
+        transition: 'opacity 0.2s ease-in-out'
+      }}
+      dangerouslySetInnerHTML={{ __html: displayedContent }}
     />
   );
 }

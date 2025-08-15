@@ -236,6 +236,7 @@ export class Orchestrator {
           try {
             // Phase: Searching Web & Processing Data
             if (agentToUse.name === 'Internet Search') {
+              console.log('🔍 ORCHESTRATOR: Sending search_phase START event')
               controller.enqueue(
                 new TextEncoder().encode(
                   `data: ${JSON.stringify({ 
@@ -254,6 +255,7 @@ export class Orchestrator {
             
             // Mark search complete (for search agents)
             if (agentToUse.name === 'Internet Search') {
+              console.log('🔍 ORCHESTRATOR: Sending search_phase COMPLETE event')
               controller.enqueue(
                 new TextEncoder().encode(
                   `data: ${JSON.stringify({ 

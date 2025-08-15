@@ -29,7 +29,7 @@ export default function Chat() {
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto pb-4">
   {/* Centered bounded container: adjust max-w-* as needed to match red box width */}
-  <div className="w-full px-4 lg:px-8 max-w-5xl mx-auto">
+  <div className="w-full px-4 lg:px-8 max-w-4xl mx-auto">
           {shouldShowWelcome && (
             <div className="flex items-center justify-center h-full min-h-[50vh]">
               <div className="text-center space-y-4 p-8">

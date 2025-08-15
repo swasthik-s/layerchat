@@ -1,18 +1,17 @@
 {
   "functions": {
     "app/api/chat/stream/route.ts": {
-      "maxDuration": 30
+      "maxDuration": 30,
+      "runtime": "nodejs20.x"
+    },
+    "app/api/**": {
+      "runtime": "nodejs20.x"
     }
   },
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/$1"
-    }
-  ],
   "build": {
     "env": {
       "NEXT_EXPERIMENTAL_STANDALONE": "true"
     }
-  }
+  },
+  "outputDirectory": ".next"
 }

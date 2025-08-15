@@ -42,12 +42,13 @@ export class DynamicOpenAIModel implements AIModel {
         throw new Error('OpenAI API key not configured')
       }
 
+      const client = this.client
       const tokenParams = this.getTokenParams(options?.maxTokens)
 
       const messages = typeof input === 'string'
         ? [{ role: 'user', content: input }]
         : [ { role: 'system', content: input.system }, { role: 'user', content: input.user } ]
-      const completion = await this.client.chat.completions.create({
+      const completion = await client.chat.completions.create({
         model: this.modelId,
         messages: messages as any,
         temperature: options?.temperature || 0.7,

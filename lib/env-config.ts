@@ -200,9 +200,19 @@ function getArrayEnvVar(name: string, defaultValue: string[] = []): string[] {
   return value.split(',').map(item => item.trim()).filter(Boolean)
 }
 
+// Accept only the three canonical NODE_ENV values; fall back to production for unknown
+function sanitizeNodeEnv(raw: string | undefined): 'development' | 'production' | 'test' {
+  if (raw === 'development' || raw === 'production' || raw === 'test') return raw
+  if (raw && typeof window === 'undefined') {
+    // Log once on server side so we notice but don't crash
+    console.warn(`[env-config] Non‑standard NODE_ENV="${raw}" detected. Falling back to 'production'. Use APP_ENV for custom stages.`)
+  }
+  return raw === 'test' ? 'test' : (raw === 'development' ? 'development' : 'production')
+}
+
 export const config: AppConfig = {
   // Application
-  nodeEnv: getOptionalEnvVar('NODE_ENV', 'development') || 'development',
+  nodeEnv: sanitizeNodeEnv(getOptionalEnvVar('NODE_ENV', 'development')),
   appEnv: getOptionalEnvVar('APP_ENV', 'local') || 'local',
   nextAuthUrl: getRequiredEnvVar('NEXTAUTH_URL'),
   nextAuthSecret: getRequiredEnvVar('NEXTAUTH_SECRET'),

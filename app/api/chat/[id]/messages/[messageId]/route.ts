@@ -2,12 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getMessagesCollection, getChatCollection } from '@/lib/mongodb'
 
 // DELETE - Delete a specific message
-export async function DELETE(
-  request: NextRequest, 
-  { params }: { params: { id: string; messageId: string } }
-) {
+export async function DELETE(request: NextRequest, context: any) {
   try {
-    const { id: chatId, messageId } = params
+    const { id: chatId, messageId } = context.params
     
     const messagesCollection = await getMessagesCollection()
     
@@ -43,12 +40,9 @@ export async function DELETE(
 }
 
 // PUT - Update a specific message
-export async function PUT(
-  request: NextRequest, 
-  { params }: { params: { id: string; messageId: string } }
-) {
+export async function PUT(request: NextRequest, context: any) {
   try {
-    const { id: chatId, messageId } = params
+    const { id: chatId, messageId } = context.params
     const body = await request.json()
     const { content, metadata } = body
     

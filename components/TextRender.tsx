@@ -9,6 +9,7 @@ import remarkMath from 'remark-math';
 import remarkRehype from 'remark-rehype';
 import rehypeKatex from 'rehype-katex';
 import rehypeStringify from 'rehype-stringify';
+import SearchStatus from '@/components/ui/SearchStatus';
 import 'katex/dist/katex.min.css';
 
 export interface TextRenderProps { 
@@ -427,8 +428,10 @@ export default function TextRender({ content, className = "", isStreaming = fals
       >
         <div className="inline-block">
           <span className="whitespace-pre-wrap">{content}</span>
-          {/* Only show streaming dot when not searching */}
-          {!isSearching && (
+          {/* Show search indicator when searching, otherwise show streaming dot */}
+          {isSearching ? (
+            <SearchStatus phase="searching" />
+          ) : (
             <span
               className="unified-dot streaming"
               style={{

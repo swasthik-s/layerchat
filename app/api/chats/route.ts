@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const chats = await chatCollection
       .find({})
       .sort({ updatedAt: -1 })
-      .limit(50) // Limit to 50 most recent chats
+      .limit(50) // Limit to 50s most recent chats
       .toArray()
 
     const formattedChats = chats.map(chat => ({

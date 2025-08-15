@@ -10,9 +10,9 @@ import { Toaster } from 'react-hot-toast'
 import { ChatSession, ChatMessage } from '@/types'
 
 interface ChatPageProps {
-  params: {
+  params: Promise<{
     id: string
-  }
+  }>
 }
 
 export default function ChatPage({ params }: ChatPageProps) {

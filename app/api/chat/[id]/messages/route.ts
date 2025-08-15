@@ -2,16 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { getChatCollection, getMessagesCollection } from '@/lib/mongodb'
 
-interface RouteParams {
-  params: {
-    id: string
-  }
-}
-
 // POST - Add a new message to the chat
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export async function POST(request: NextRequest, context: any) {
   try {
-    const { id: chatId } = await params
+    const { id: chatId } = await context.params
     const body = await request.json()
     const { role, content, type = 'text', metadata = {}, attachments = [] } = body
 
@@ -72,9 +66,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 }
 
 // GET - Get all messages for a chat
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, context: any) {
   try {
-    const { id: chatId } = params
+    const { id: chatId } = context.params
     
     const messagesCollection = await getMessagesCollection()
     

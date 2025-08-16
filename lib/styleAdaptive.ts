@@ -1,99 +1,107 @@
-// Autonomous interaction utilities - natural conversation flow without hardcoded responses
+// Adaptive style utilities: classify prompt category and generate intelligent conversation starters.
 
-export type InteractionContext = 'greeting' | 'learning' | 'problem_solving' | 'technical' | 'creative' | 'conversational';
+const GREETING_REGEX = /^(hi|hey|hello|yo|sup|hiya|hi there|hey there|good (morning|afternoon|evening))[!. ]*$/i;
 
-export function analyzeInteractionContext(prompt: string): InteractionContext {
-  const p = prompt.trim().toLowerCase();
-  if (!p) return 'conversational';
-  
-  // Natural greeting detection (but AI will respond authentically)
-  if (/^(hi|hey|hello|yo|sup|hiya|hi there|hey there|good (morning|afternoon|evening))[!. ]*$/i.test(p)) {
-    return 'greeting';
-  }
-  
-  // Learning context - user wants to understand something
-  if (/\b(explain|understand|learn|teach|how does|why does|what is|help me understand)\b/i.test(p)) {
-    return 'learning';
-  }
-  
-  // Problem-solving context - user has a specific challenge
-  if (/\b(solve|fix|debug|error|problem|issue|stuck|calculate|build|implement)\b/i.test(p)) {
-    return 'problem_solving';
-  }
-  
-  // Technical context - code, systems, technical discussions
-  if (/\b(function|class|react|typescript|code|api|database|server|deploy|docker)\b/i.test(p)) {
-    return 'technical';
-  }
-  
-  // Creative context - brainstorming, ideas, creative work
-  if (/\b(story|poem|brainstorm|ideas|creative|design|metaphor|imagine)\b/i.test(p)) {
-    return 'creative';
-  }
-  
-  return 'conversational';
+export type PromptCategory = 'greeting' | 'simple' | 'complex' | 'math' | 'code' | 'creative' | 'other';
+
+export function classifyPrompt(prompt: string): PromptCategory {
+  const p = prompt.trim();
+  if (!p) return 'other';
+  if (GREETING_REGEX.test(p)) return 'greeting';
+  if (/\b(calculate|convert|percent|sum|solve|derivative|integral|=)\b/i.test(p) && p.length < 120) return 'math';
+  if (/\b(function|class|react|typescript|code|bug|error|stack trace|compile)\b/i.test(p)) return 'code';
+  if (/\b(story|poem|brainstorm|ideas|creative|metaphor)\b/i.test(p)) return 'creative';
+  // Simple factual if short and a single sentence
+  if (p.length < 60 && !/[?].*[?]/.test(p) && /\b(what|who|when|where|why|how)\b/i.test(p)) return 'simple';
+  // Complex if long or multi-question
+  if (p.length > 180 || /\?+.*\?+/.test(p)) return 'complex';
+  return 'other';
 }
 
-/**
- * Provides natural context guidance for autonomous AI responses
- * Instead of prescriptive templates, gives the AI situational awareness
- */
-export function getContextualGuidance(context: InteractionContext): string {
-  switch (context) {
-    case 'greeting':
-      return 'CONTEXT: User is greeting you. Respond naturally and warmly as an intelligent assistant would, then smoothly transition to being helpful. Be authentic - no forced templates.';
-    
-    case 'learning':
-      return 'CONTEXT: User wants to learn or understand something. Use your teaching expertise to explain clearly with examples and analogies when helpful. Gauge their level and adapt accordingly.';
-    
-    case 'problem_solving':
-      return 'CONTEXT: User has a specific problem to solve. Focus on practical solutions, break down complex problems logically, and provide actionable guidance. Think step-by-step when helpful.';
-    
-    case 'technical':
-      return 'CONTEXT: Technical discussion. Leverage your expertise appropriately, provide working examples when relevant, and ensure accuracy. Match their technical level naturally.';
-    
-    case 'creative':
-      return 'CONTEXT: Creative or brainstorming session. Be imaginative and engaging while staying helpful. Encourage their creativity and offer diverse perspectives.';
-    
-    case 'conversational':
-    default:
-      return 'CONTEXT: General conversation. Respond naturally based on what they need. Use your intelligence to determine the best approach for this specific interaction.';
-  }
+// Context-aware conversation starters based on time, session, and user patterns
+function getTimeContext(): string {
+  const hour = new Date().getHours();
+  if (hour < 6) return 'late-night';
+  if (hour < 12) return 'morning';
+  if (hour < 17) return 'afternoon';
+  if (hour < 21) return 'evening';
+  return 'night';
 }
 
-/**
- * Generate natural conversation guidance instead of hardcoded responses
- * Helps AI understand the interaction flow without constraining responses
- */
-export function generateNaturalGuidance(prompt: string): { context: InteractionContext; guidance: string; naturalFlow: string } {
-  const context = analyzeInteractionContext(prompt);
-  const guidance = getContextualGuidance(context);
+function getSessionContext(): string {
+  // Check if this might be a returning user (simplified heuristic)
+  const hasHistory = typeof window !== 'undefined' && 
+    (localStorage.getItem('layerchat-storage') || sessionStorage.length > 0);
+  return hasHistory ? 'returning' : 'new';
+}
+
+export function generateGreetingVariant(): { hint: string; opener: string; follow: string } {
+  const timeContext = getTimeContext();
+  const sessionContext = getSessionContext();
   
-  // Natural flow guidance based on interaction type
-  let naturalFlow = '';
-  switch (context) {
-    case 'greeting':
-      naturalFlow = 'Flow: Warm acknowledgment → Express readiness to help → Optionally ask what they\'d like to work on (but only if it feels natural)';
-      break;
-    case 'learning':
-      naturalFlow = 'Flow: Understand their current level → Explain clearly with examples → Check understanding when appropriate';
-      break;
-    case 'problem_solving':
-      naturalFlow = 'Flow: Understand the problem → Break down approach → Provide solution with reasoning → Offer next steps if helpful';
-      break;
-    case 'technical':
-      naturalFlow = 'Flow: Assess technical context → Provide accurate technical guidance → Include practical examples → Consider edge cases when relevant';
-      break;
-    case 'creative':
-      naturalFlow = 'Flow: Understand creative direction → Offer diverse ideas → Build on their concepts → Encourage exploration';
-      break;
-    default:
-      naturalFlow = 'Flow: Understand intent → Provide helpful response → Adapt naturally to conversation needs';
+  // Instead of hardcoded responses, provide intelligent context for the AI
+  const contextualHints = [
+    `Time: ${timeContext}, User: ${sessionContext} session`,
+    'Generate a warm, contextual greeting that feels natural and personal',
+    'Consider the time of day and whether this seems like a new or returning conversation',
+    'Keep it concise (under 15 words) and end with an open question that invites engagement',
+    'Avoid generic phrases like "How can I help?" - be more conversational and specific'
+  ].join('. ');
+
+  const hint = `SMART_GREETING_CONTEXT: ${contextualHints}. Respond with ONE natural sentence that acknowledges the context and opens the conversation thoughtfully.`;
+  
+  // For backward compatibility, still return opener/follow but they're now contextual guides
+  const opener = `Context-aware greeting (${timeContext}, ${sessionContext})`;
+  const follow = 'AI should generate appropriate follow-up based on context';
+  
+  return { hint, opener, follow };
+}
+
+// Enhanced context detection for better conversation flow
+export function getConversationContext(recentMessages?: string[]): string {
+  if (!recentMessages || recentMessages.length === 0) {
+    return 'fresh-start';
   }
   
-  return { 
-    context, 
-    guidance, 
-    naturalFlow: `NATURAL_FLOW: ${naturalFlow}. Remember: be authentic and use your judgment about what's most helpful.`
+  const lastMessage = recentMessages[recentMessages.length - 1]?.toLowerCase() || '';
+  
+  // Detect continuation patterns
+  if (lastMessage.includes('tell me more') || lastMessage.includes('continue')) {
+    return 'seeking-depth';
+  }
+  if (lastMessage.includes('but') || lastMessage.includes('however') || lastMessage.includes('what about')) {
+    return 'exploring-alternatives';
+  }
+  if (lastMessage.includes('example') || lastMessage.includes('show me')) {
+    return 'needs-examples';
+  }
+  if (lastMessage.includes('why') || lastMessage.includes('how does')) {
+    return 'seeking-understanding';
+  }
+  
+  return 'ongoing';
+}
+
+// Smart response hints based on conversation flow
+export function generateResponseHints(category: PromptCategory, context: string): string {
+  const baseHints: Record<PromptCategory, string> = {
+    'greeting': 'Be warm and welcoming, set a positive tone for the conversation',
+    'simple': 'Provide a clear, direct answer with just enough context to be helpful',
+    'complex': 'Break down into digestible parts, use structure to organize thoughts',
+    'math': 'Show your work clearly, use step-by-step reasoning',
+    'code': 'Provide working examples, explain the logic, suggest best practices',
+    'creative': 'Be imaginative while staying helpful, offer multiple perspectives',
+    'other': 'Be adaptive to the user\'s specific needs and communication style'
   };
+
+  const contextualModifiers: Record<string, string> = {
+    'seeking-depth': ' Go deeper into the topic, provide additional layers of detail.',
+    'exploring-alternatives': ' Present different approaches or viewpoints to consider.',
+    'needs-examples': ' Include concrete, practical examples to illustrate your points.',
+    'seeking-understanding': ' Focus on the underlying principles and reasoning.',
+    'fresh-start': ' Set a welcoming tone and establish clear communication.',
+    'ongoing': ' Build naturally on the previous conversation context.'
+  };
+
+  return baseHints[category] + (contextualModifiers[context] || '');
 }

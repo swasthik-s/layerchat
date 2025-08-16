@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Orchestrator } from '@/app/orchestrator'
 import { ChatMessage } from '@/types'
+import { ChatService } from '@/lib/chat-service'
+import type { SupabaseMessage } from '@/lib/supabase'
 import { v4 as uuidv4 } from 'uuid'
 
 // Create a global orchestrator instance
@@ -13,9 +15,6 @@ const orchestrator = new Orchestrator({
 
 export async function POST(request: NextRequest, context: any) {
   try {
-    // Lazy import MongoDB to avoid build-time errors
-    const { getChatCollection, getMessagesCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
-    
     const { id: chatId } = await context.params
     const body = await request.json()
     const { message, model, settings } = body
@@ -27,11 +26,10 @@ export async function POST(request: NextRequest, context: any) {
       )
     }
 
-    // Verify chat exists
-    const chatCollection = await getChatCollection()
-    const chat = await chatCollection.findOne({ id: chatId })
+    // Verify chat exists using OptimizedChatService
+    const conversation = await ChatService.getConversation(chatId)
     
-    if (!chat) {
+    if (!conversation) {
       return NextResponse.json(
         { error: 'Chat not found' },
         { status: 404 }
@@ -58,25 +56,19 @@ export async function POST(request: NextRequest, context: any) {
     // Process with orchestrator - this will handle streaming
     const response = await orchestrator.processMessage(chatMessage, model, settings)
 
-    // Save assistant response to MongoDB
+    // Save assistant response using OptimizedChatService
     const assistantMessageId = uuidv4()
-    const messagesCollection = await getMessagesCollection()
-    await messagesCollection.insertOne({
+    const assistantMessage = {
       id: assistantMessageId,
-      chatId,
-      role: 'assistant',
+      role: 'assistant' as const,
       content: response.content,
-      type: response.type || 'text',
-      timestamp: Date.now(),
-      metadata: response.metadata || {},
-      attachments: []
-    })
+      type: (response.type === 'code' || response.type === 'video') ? 'text' as const : (response.type || 'text') as 'text' | 'file' | 'image',
+      timestamp: new Date().toISOString(),
+      metadata: response.metadata || {}
+    }
 
-    // Update chat's updatedAt timestamp
-    await chatCollection.updateOne(
-      { id: chatId },
-      { $set: { updatedAt: Date.now() } }
-    )
+    // Add message using new ChatService with AI title generation
+    await ChatService.addMessages(chatId, [assistantMessage])
 
     // Return streaming response format that matches the original chat endpoint
     const encoder = new TextEncoder()

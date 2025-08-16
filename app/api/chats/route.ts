@@ -1,29 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { ChatService } from '@/lib/chat-service'
 
 // GET - List all chats (for sidebar)
 export async function GET(request: NextRequest) {
   try {
-    // Lazy import MongoDB to avoid build-time errors
-    const { getChatCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
+    // Use ChatService for fast cached retrieval
+    const conversations = await ChatService.getConversationList()
     
-    if (!isMongoDBAvailable()) {
-      return NextResponse.json({ chats: [] })
-    }
-
-    const chatCollection = await getChatCollection()
-    
-    const chats = await chatCollection
-      .find({})
-      .sort({ updatedAt: -1 })
-      .limit(50) // Limit to 50s most recent chats
-      .toArray()
-
-    const formattedChats = chats.map(chat => ({
+    const formattedChats = conversations.map((chat: any) => ({
       id: chat.id,
       title: chat.title,
       model: chat.model,
-      createdAt: chat.createdAt,
-      updatedAt: chat.updatedAt,
+      createdAt: chat.created_at,
+      updatedAt: chat.updated_at,
       metadata: chat.metadata,
       messages: [] // Don't include messages in list view for performance
     }))

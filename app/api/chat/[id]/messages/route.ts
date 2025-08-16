@@ -1,72 +1,75 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
+import { ChatService } from '@/lib/chat-service'
+import type { SupabaseMessage } from '@/lib/supabase'
 
 // POST - Add a new message to the chat
 export async function POST(request: NextRequest, context: any) {
   try {
-    // Lazy import MongoDB to avoid build-time errors
-    const { getChatCollection, getMessagesCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
-    
-    if (!isMongoDBAvailable()) {
-      return NextResponse.json(
-        { error: 'MongoDB is not configured' },
-        { status: 500 }
-      )
-    }
-
     const { id: chatId } = await context.params
     const body = await request.json()
-    const { role, content, type = 'text', metadata = {}, attachments = [] } = body
+    const { id: messageId, role, content, type = 'text', metadata = {}, attachments = [] } = body
 
-    // Verify chat exists
-    const chatCollection = await getChatCollection()
-    const chat = await chatCollection.findOne({ id: chatId })
+    console.log('📥 POST /api/chat/[id]/messages - Received:', {
+      chatId,
+      messageId: messageId || 'auto-generated',
+      role,
+      contentLength: content?.length,
+      type
+    })
+
+    // Verify chat exists using ChatService
+    const conversation = await ChatService.getConversation(chatId)
     
-    if (!chat) {
+    if (!conversation) {
+      console.log('❌ Chat not found:', chatId)
       return NextResponse.json(
         { error: 'Chat not found' },
         { status: 404 }
       )
     }
 
-    // Create message document
-    const messageId = uuidv4()
-    const messageDocument = {
-      id: messageId,
-      chatId,
+    console.log('✅ Chat found:', conversation.id)
+
+    // Use provided ID or generate new one
+    const finalMessageId = messageId || uuidv4()
+    const message = {
+      id: finalMessageId,
       role,
       content,
       type,
-      timestamp: Date.now(),
+      timestamp: new Date().toISOString(),
       metadata,
-      attachments
+      attachments: attachments || []
     }
 
-    // Save message to MongoDB
-    const messagesCollection = await getMessagesCollection()
-    await messagesCollection.insertOne(messageDocument)
+    console.log('💾 Saving message:', {
+      id: finalMessageId,
+      chatId,
+      role,
+      contentLength: content?.length
+    })
 
-    // Update chat's updatedAt timestamp
-    await chatCollection.updateOne(
-      { id: chatId },
-      { $set: { updatedAt: Date.now() } }
-    )
+    // Add message using ChatService with AI title generation
+    await ChatService.addMessages(chatId, [message])
+    
+    console.log('✅ Message saved successfully')
 
     return NextResponse.json({
       message: {
-        id: messageId,
+        id: finalMessageId,
         chatId,
         role,
         content,
         type,
-        timestamp: messageDocument.timestamp,
+        timestamp: message.timestamp,
         metadata,
         attachments
       }
     })
 
   } catch (error) {
-    console.error('Error adding message:', error)
+    console.error('❌ Error adding message:', error)
     return NextResponse.json(
       { error: 'Failed to add message' },
       { status: 500 }
@@ -77,26 +80,22 @@ export async function POST(request: NextRequest, context: any) {
 // GET - Get all messages for a chat
 export async function GET(request: NextRequest, context: any) {
   try {
-    // Lazy import MongoDB to avoid build-time errors
-    const { getMessagesCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
-    
-    if (!isMongoDBAvailable()) {
-      return NextResponse.json({ messages: [] })
-    }
-
     const { id: chatId } = context.params
     
-    const messagesCollection = await getMessagesCollection()
+    // Get conversation with messages using ChatService
+    const conversation = await ChatService.getConversation(chatId)
     
-    const messages = await messagesCollection
-      .find({ chatId })
-      .sort({ timestamp: 1 })
-      .toArray()
+    if (!conversation) {
+      return NextResponse.json(
+        { error: 'Chat not found' },
+        { status: 404 }
+      )
+    }
 
     return NextResponse.json({
-      messages: messages.map(msg => ({
+      messages: conversation.messages.map((msg: any) => ({
         id: msg.id,
-        chatId: msg.chatId,
+        chatId: chatId,
         role: msg.role,
         content: msg.content,
         type: msg.type,

@@ -45,17 +45,23 @@ function ChatPageContent({ params }: { params: ChatPageProps['params'] }) {
   useEffect(() => {
     const loadChat = async () => {
       try {
+        console.log('🔍 Loading chat with ID:', chatId)
+        
         // Check if we already have this chat in the current session
         if (currentSession && currentSession.id === chatId) {
+          console.log('✅ Chat already loaded in current session')
           setError(null)
           return
         }
+        
+        console.log('📡 Fetching chat from API:', `/api/chat/${chatId}`)
         
         // Only fetch from MongoDB if we don't already have the chat
         const response = await fetch(`/api/chat/${chatId}`)
         
         if (!response.ok) {
           if (response.status === 404) {
+            console.log('❌ Chat not found (404)')
             setError('Chat not found')
             return
           }
@@ -63,6 +69,7 @@ function ChatPageContent({ params }: { params: ChatPageProps['params'] }) {
         }
 
         const data = await response.json()
+        console.log('📦 Received chat data:', data)
         const chatData = data.chat
 
         // Convert to ChatSession format
@@ -76,11 +83,12 @@ function ChatPageContent({ params }: { params: ChatPageProps['params'] }) {
           metadata: chatData.metadata
         }
 
+        console.log('🎯 Setting current session with messages:', session.messages.length)
         setCurrentSession(session)
         setError(null)
         
       } catch (err) {
-        console.error('Error loading chat:', err)
+        console.error('❌ Error loading chat:', err)
         setError('Failed to load chat')
       }
     }

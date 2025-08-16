@@ -95,6 +95,7 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
 
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
   const [searchPhase, setSearchPhase] = useState<{ phase: 'searching' | 'complete', searchQuery?: string } | null>(null)
+  const [searchStartTime, setSearchStartTime] = useState<number | null>(null)
   // Accumulate raw streaming text; finalize with formatMessage when done
   const rawBufferRef = useRef<string>('')
   // Track last formatted length to throttle incremental formatting
@@ -286,46 +287,64 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
     try {
       let currentChatId = chatId || currentSession?.id
 
-      // Step 4: Only create new chat ID if we don't have one AND we're not in an existing session
+      // Step 4: Create chatId for smooth flow - session gets created optimistically
       if (!currentChatId && !currentSession?.id) {
-        console.log('Creating new chat - no existing chatId or session')
-        fetch('/api/chat/id', {
+        console.log('🚀 Creating new chat for buttery smooth experience')
+        
+        // Create session optimistically for immediate URL update
+        const tempResponse = await fetch('/api/chat/id', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title: content.slice(0, 50) + (content.length > 50 ? '...' : ''),
             model: selectedModel,
           }),
-        }).then(async (response) => {
-          if (response.ok) {
-            const { id: newChatId } = await response.json()
-            
-            // Update session and sidebar
-            const newSession = {
-              id: newChatId,
-              title: content.slice(0, 50) + (content.length > 50 ? '...' : ''),
-              messages: [userMessage, assistantMessage],
-              model: selectedModel,
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-            }
-            
-            const { setCurrentSession, sessions } = useChatStore.getState()
-            setCurrentSession(newSession)
-            
-            if (!sessions.find(s => s.id === newChatId)) {
-              useChatStore.setState({ sessions: [newSession, ...sessions] })
-            }
-            
-            // Update URL after streaming starts
-            setTimeout(() => router.replace(`/chat/${newChatId}`), 2000)
+        })
+        
+        if (tempResponse.ok) {
+          const { id: newChatId } = await tempResponse.json()
+          currentChatId = newChatId
+          
+          console.log('✅ Created chatId:', newChatId)
+          
+          // Update session optimistically for UI
+          const newSession = {
+            id: newChatId,
+            title: content.slice(0, 50) + (content.length > 50 ? '...' : ''),
+            messages: [userMessage, assistantMessage],
+            model: selectedModel,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
           }
-        }).catch(console.warn)
+          
+          const { setCurrentSession, sessions } = useChatStore.getState()
+          setCurrentSession(newSession)
+          
+          if (!sessions.find(s => s.id === newChatId)) {
+            useChatStore.setState({ sessions: [newSession, ...sessions] })
+          }
+          
+          // Navigate to new chat immediately so AI can work with chat ID
+          router.replace(`/chat/${newChatId}`)
+          console.log('💫 Navigated to new chat:', newChatId)
+        }
+      } else if (currentSession?.id) {
+        currentChatId = currentSession.id
+        console.log('Using existing session ID:', currentChatId)
       }
 
       // Step 5: Start streaming immediately (priority)
       if (enableStreaming && settings.streamResponses) {
         // Update the assistant message directly with streaming content
+        console.log('🚀 Starting streaming request with settings:', {
+          model: selectedModel,
+          temperature: settings.temperature,
+          maxTokens: settings.maxTokens,
+          enableAutoAgents: settings.enableAutoAgents,
+          governance: settings.governance,
+          hasCurrentChatId: !!currentChatId
+        })
+
         const streamResponse = await fetch('/api/chat/stream', {
           method: 'POST',
           headers: {
@@ -338,7 +357,12 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
               type: 'text'
             },
             model: selectedModel,
-            settings: {},
+            settings: {
+              temperature: settings.temperature,
+              maxTokens: settings.maxTokens,
+              enableAutoAgents: settings.enableAutoAgents,
+              governance: settings.governance || { mode: 'smart', enabled: true },
+            },
           }),
         })
 
@@ -366,25 +390,36 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
             for (const line of lines) {
               if (!line.startsWith('data: ')) continue
               const data = line.slice(6)
-              if (data === '[DONE]') break
+              if (data === '[DONE]') {
+                console.log('🏁 Received [DONE] signal')
+                break
+              }
               try {
                 const parsed = JSON.parse(data)
+                console.log('📦 Received streaming data:', parsed.type, parsed)
                 switch (parsed.type) {
                   case 'search_phase': {
                     // New: capture search status for UI indicator
                     console.log('🔍 HOOK(sendMessage): search_phase event', parsed)
                     setSearchPhase({ phase: parsed.phase, searchQuery: parsed.searchQuery })
-                    if (parsed.phase === 'complete') {
-                      setTimeout(() => {
-                        // Only clear if unchanged (avoid race with new search)
-                        setSearchPhase(curr => (curr && curr.phase === 'complete') ? null : curr)
-                      }, 1000)
-                    }
+                    setSearchStartTime(Date.now())
+                    // Don't clear search phase here - let it persist until content starts streaming
                     break
                   }
                   case 'content': {
                     if (!parsed.content) break
                     accumulatedContent += parsed.content
+                    
+                    // Clear search phase when we have substantial content AND minimum time has passed
+                    const minSearchDuration = 3000 // 3 seconds minimum
+                    const hasEnoughContent = accumulatedContent.trim().length > 200
+                    const hasEnoughTime = searchStartTime ? (Date.now() - searchStartTime) > minSearchDuration : true
+                    
+                    if (searchPhase && hasEnoughContent && hasEnoughTime) {
+                      console.log('🔍 HOOK(sendMessage): Clearing search phase as content streaming starts')
+                      setSearchPhase(null)
+                      setSearchStartTime(null)
+                    }
                     updateMessage(assistantMessageId, {
                       ...assistantMessage,
                       content: accumulatedContent,
@@ -414,8 +449,52 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
         updateMessage(assistantMessageId, {
           ...assistantMessage,
           content: accumulatedContent,
-          metadata: { model: selectedModel }
+          metadata: { model: selectedModel, streaming: false, completed: true }
         })
+
+        // Save conversation to MongoDB after successful streaming
+        if (currentChatId && accumulatedContent.trim()) {
+          console.log('💾 Saving conversation to MongoDB after streaming completion')
+          try {
+            // Save user message
+            const userSaveResponse = await fetch(`/api/chat/${currentChatId}/messages`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: userMessage.id,
+                role: 'user',
+                content: content.trim(),
+                type: (attachments && attachments.length > 0) ? 'file' : 'text',
+                metadata: { model: selectedModel },
+                attachments: userMessage.attachments || []
+              })
+            })
+
+            // Save assistant message
+            const assistantSaveResponse = await fetch(`/api/chat/${currentChatId}/messages`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: assistantMessageId,
+                role: 'assistant',
+                content: accumulatedContent,
+                type: 'text',
+                metadata: { model: selectedModel, streaming: false, completed: true }
+              })
+            })
+
+            if (userSaveResponse.ok && assistantSaveResponse.ok) {
+              console.log('✅ Conversation saved to MongoDB successfully')
+              // Mark both messages as persisted
+              updateMessage(userMessage.id, { pending: false })
+              updateMessage(assistantMessageId, { pending: false })
+            } else {
+              console.warn('⚠️ Failed to save some messages to MongoDB')
+            }
+          } catch (error) {
+            console.error('❌ Error saving conversation to MongoDB:', error)
+          }
+        }
       } else {
         // Non-streaming response
         const response = await fetch('/api/chat', {
@@ -449,6 +528,10 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
     } catch (error) {
       console.error('Chat error:', error)
       
+      // Clear search phase on error
+      setSearchPhase(null)
+      setSearchStartTime(null)
+      
       // Update user message status to error
       updateMessage(userMessage.id, { 
         ...userMessage, 
@@ -469,6 +552,9 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
     } finally {
       setLoading(false)
       setStreamingMessageId(null)
+      // Clear search phase in finally block as well to ensure cleanup
+      setSearchPhase(null)
+      setSearchStartTime(null)
     }
   }, [addMessage, updateMessage, setLoading, selectedModel, settings, enableStreaming, chatId, router])
 
@@ -535,19 +621,24 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
               case 'search_phase':
                 console.log('🔍 HOOK: Search phase received:', data)
                 setSearchPhase({ phase: data.phase, searchQuery: data.searchQuery })
-                // Clear search phase when search is complete - keep it visible longer
-                if (data.phase === 'complete') {
-                  console.log('🔍 HOOK: Search complete, clearing in 1000ms')
-                  setTimeout(() => {
-                    console.log('🔍 HOOK: Actually clearing search phase now')
-                    setSearchPhase(null)
-                  }, 1000) // Longer delay to ensure smooth transition
-                }
+                setSearchStartTime(Date.now())
+                // Don't clear search phase here - let it persist until content starts streaming
                 break
               case 'content':
                 if (!data.content) break
                 rawBufferRef.current += data.content
                 accumulatedContent = rawBufferRef.current
+                
+                // Clear search phase when we have substantial content AND minimum time has passed
+                const minSearchDuration = 3000 // 3 seconds minimum
+                const hasEnoughContent = accumulatedContent.trim().length > 200
+                const hasEnoughTime = searchStartTime ? (Date.now() - searchStartTime) > minSearchDuration : true
+                
+                if (searchPhase && hasEnoughContent && hasEnoughTime) {
+                  console.log('🔍 HOOK: Clearing search phase as content streaming starts')
+                  setSearchPhase(null)
+                  setSearchStartTime(null)
+                }
                 const mode = data.metadata?.outputMode || messageMetadata?.outputMode || 'AUTO'
                 let displayPortion = accumulatedContent
                 // For new intelligent modes, show content as-is during streaming
@@ -585,7 +676,6 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
                 if (chatId && data.assistantMessage) {
                   // Add only the assistant message from MongoDB to the store
                   addMessage({
-                    id: data.assistantMessage.id,
                     role: data.assistantMessage.role,
                     content: data.assistantMessage.content,
                     type: data.assistantMessage.type,
@@ -710,6 +800,9 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}) {
   rawBufferRef.current = ''
       setStreamingMessageId(null)
       setLoading(false)
+      // Clear search phase when stopping generation
+      setSearchPhase(null)
+      setSearchStartTime(null)
     }
   }, [streamingMessageId, updateMessage, setLoading])
 

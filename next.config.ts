@@ -2,9 +2,6 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
-  // Enable standalone output for Docker
-  output: 'standalone',
-  
   // Disable source maps to fix the invalid source map error
   productionBrowserSourceMaps: false,
   

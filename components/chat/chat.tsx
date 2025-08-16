@@ -13,6 +13,15 @@ export default function Chat() {
     chatId: currentSession?.id
   })
   
+  // Debug logging
+  React.useEffect(() => {
+    console.log('🎨 CHAT COMPONENT UPDATE:', {
+      currentSession: currentSession?.id,
+      messagesCount: messages.length,
+      messages: messages
+    })
+  }, [currentSession, messages])
+  
   // Debug search phase
   React.useEffect(() => {
     if (searchPhase) {

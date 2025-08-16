@@ -48,6 +48,9 @@ export interface ChatMessage {
   content: string
   type: 'text' | 'image' | 'video' | 'code' | 'file'
   timestamp: number
+  pending?: boolean // True while message is being saved to MongoDB
+  deleted?: boolean // Soft delete flag
+  embedding?: number[] // For vector search / semantic memory
   metadata?: {
     model?: string
     agent?: string

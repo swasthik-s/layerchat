@@ -1,44 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { v4 as uuidv4 } from 'uuid'
+import { ChatService } from '@/lib/chat-service'
 
 export async function POST(request: NextRequest) {
   try {
-    // Lazy import MongoDB to avoid build-time errors
-    const { getChatCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
-    
-    if (!isMongoDBAvailable()) {
-      return NextResponse.json(
-        { error: 'MongoDB is not configured' },
-        { status: 500 }
-      )
-    }
-
     const body = await request.json()
     const { title, model } = body
 
-    // Generate a new UUID for the chat
-    const chatId = uuidv4()
-    const now = Date.now()
-
-    // Create chat document
-    const chatDocument = {
-      id: chatId,
-      title: title || 'New Chat',
-      model: model || 'GPT-4',
-      createdAt: now,
-      updatedAt: now,
-      metadata: {}
-    }
-
-    // Save to MongoDB
-    const chatCollection = await getChatCollection()
-    const result = await chatCollection.insertOne(chatDocument)
+    // Create conversation using ChatService
+    const conversation = await ChatService.createConversation(
+      title || 'New Chat',
+      model || 'GPT-4',
+      [] // No initial messages
+    )
 
     return NextResponse.json({ 
-      id: chatId,
+      id: conversation.id,
       chat: {
-        ...chatDocument,
-        _id: result.insertedId
+        id: conversation.id,
+        title: conversation.title,
+        model: conversation.model,
+        createdAt: conversation.created_at,
+        updatedAt: conversation.updated_at,
+        metadata: conversation.metadata,
+        messages: conversation.messages
       }
     })
 

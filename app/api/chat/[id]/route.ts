@@ -1,48 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { OptimizedChatService } from '@/lib/optimized-chat-service'
 
 // GET - Retrieve a chat and its messages
 export async function GET(request: NextRequest, context: any) {
   try {
-    // Lazy import MongoDB to avoid build-time errors
-    const { getChatCollection, getMessagesCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
-    
-    if (!isMongoDBAvailable()) {
-      return NextResponse.json(
-        { error: 'MongoDB is not configured' },
-        { status: 500 }
-      )
-    }
-
     const { id } = await context.params
     
-    const chatCollection = await getChatCollection()
-    const messagesCollection = await getMessagesCollection()
-
-    // Get chat document
-    const chat = await chatCollection.findOne({ id })
+    // Use OptimizedChatService for fast cached retrieval
+    const conversation = await OptimizedChatService.getConversation(id)
     
-    if (!chat) {
+    if (!conversation) {
       return NextResponse.json(
         { error: 'Chat not found' },
         { status: 404 }
       )
     }
 
-    // Get all messages for this chat
-    const messages = await messagesCollection
-      .find({ chatId: id })
-      .sort({ timestamp: 1 })
-      .toArray()
-
     return NextResponse.json({
       chat: {
-        id: chat.id,
-        title: chat.title,
-        model: chat.model,
-        createdAt: chat.createdAt,
-        updatedAt: chat.updatedAt,
-        metadata: chat.metadata,
-        messages: messages.map(msg => ({
+        id: conversation.id,
+        title: conversation.title,
+        model: conversation.model,
+        createdAt: conversation.created_at,
+        updatedAt: conversation.updated_at,
+        metadata: conversation.metadata,
+        messages: conversation.messages.map((msg: any) => ({
           id: msg.id,
           role: msg.role,
           content: msg.content,
@@ -66,35 +48,18 @@ export async function GET(request: NextRequest, context: any) {
 // PUT - Update chat title or metadata
 export async function PUT(request: NextRequest, context: any) {
   try {
-    // Lazy import MongoDB to avoid build-time errors
-    const { getChatCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
-    
-    if (!isMongoDBAvailable()) {
-      return NextResponse.json(
-        { error: 'MongoDB is not configured' },
-        { status: 500 }
-      )
-    }
-
     const { id } = await context.params
     const body = await request.json()
     const { title, metadata } = body
     
-    const chatCollection = await getChatCollection()
-    
-    const updateData: any = {
-      updatedAt: Date.now()
-    }
-    
+    // Update conversation using OptimizedChatService
+    const updateData: any = {}
     if (title !== undefined) updateData.title = title
     if (metadata !== undefined) updateData.metadata = metadata
 
-    const result = await chatCollection.updateOne(
-      { id },
-      { $set: updateData }
-    )
+    const success = await OptimizedChatService.updateConversation(id, updateData)
 
-    if (result.matchedCount === 0) {
+    if (!success) {
       return NextResponse.json(
         { error: 'Chat not found' },
         { status: 404 }
@@ -115,28 +80,12 @@ export async function PUT(request: NextRequest, context: any) {
 // DELETE - Delete a chat and all its messages
 export async function DELETE(request: NextRequest, context: any) {
   try {
-    // Lazy import MongoDB to avoid build-time errors
-    const { getChatCollection, getMessagesCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
-    
-    if (!isMongoDBAvailable()) {
-      return NextResponse.json(
-        { error: 'MongoDB is not configured' },
-        { status: 500 }
-      )
-    }
-
     const { id } = await context.params
     
-    const chatCollection = await getChatCollection()
-    const messagesCollection = await getMessagesCollection()
+    // Delete conversation using OptimizedChatService
+    const success = await OptimizedChatService.deleteConversation(id)
 
-    // Delete all messages for this chat
-    await messagesCollection.deleteMany({ chatId: id })
-    
-    // Delete the chat
-    const result = await chatCollection.deleteOne({ id })
-
-    if (result.deletedCount === 0) {
+    if (!success) {
       return NextResponse.json(
         { error: 'Chat not found' },
         { status: 404 }

@@ -1,41 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { OptimizedChatService } from '@/lib/optimized-chat-service'
 
 // DELETE - Delete a specific message
 export async function DELETE(request: NextRequest, context: any) {
   try {
-    // Lazy import MongoDB to avoid build-time errors
-    const { getMessagesCollection, getChatCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
-    
-    if (!isMongoDBAvailable()) {
-      return NextResponse.json(
-        { error: 'MongoDB is not configured' },
-        { status: 500 }
-      )
-    }
-
     const { id: chatId, messageId } = context.params
     
-    const messagesCollection = await getMessagesCollection()
-    
-    // Delete the message
-    const result = await messagesCollection.deleteOne({
-      id: messageId,
-      chatId: chatId
-    })
+    // Delete message using OptimizedChatService
+    const success = await OptimizedChatService.deleteMessage(chatId, messageId)
 
-    if (result.deletedCount === 0) {
+    if (!success) {
       return NextResponse.json(
         { error: 'Message not found' },
         { status: 404 }
       )
     }
-
-    // Update chat's updatedAt timestamp
-    const chatCollection = await getChatCollection()
-    await chatCollection.updateOne(
-      { id: chatId },
-      { $set: { updatedAt: Date.now() } }
-    )
 
     return NextResponse.json({ success: true })
 
@@ -48,47 +27,69 @@ export async function DELETE(request: NextRequest, context: any) {
   }
 }
 
-// PUT - Update a specific message
-export async function PUT(request: NextRequest, context: any) {
+// PATCH - Partially update a specific message (supports soft delete)
+export async function PATCH(request: NextRequest, context: any) {
   try {
-    // Lazy import MongoDB to avoid build-time errors
-    const { getMessagesCollection, getChatCollection, isMongoDBAvailable } = await import('@/lib/mongodb')
-    
-    if (!isMongoDBAvailable()) {
-      return NextResponse.json(
-        { error: 'MongoDB is not configured' },
-        { status: 500 }
-      )
-    }
-
-    const { id: chatId, messageId } = context.params
+    const { id: chatId, messageId } = await context.params
     const body = await request.json()
-    const { content, metadata } = body
     
-    const messagesCollection = await getMessagesCollection()
+    console.log('📥 PATCH /api/chat/[id]/messages/[messageId] - Received:', {
+      chatId,
+      messageId,
+      updates: Object.keys(body)
+    })
     
+    // Build update object with only provided fields
     const updateData: any = {}
-    if (content !== undefined) updateData.content = content
-    if (metadata !== undefined) updateData.metadata = metadata
+    if (body.content !== undefined) updateData.content = body.content
+    if (body.metadata !== undefined) updateData.metadata = body.metadata
+    if (body.deleted !== undefined) updateData.deleted = body.deleted
+    if (body.embedding !== undefined) updateData.embedding = body.embedding
 
-    const result = await messagesCollection.updateOne(
-      { id: messageId, chatId: chatId },
-      { $set: updateData }
-    )
+    // Update message using OptimizedChatService
+    const success = await OptimizedChatService.updateMessage(chatId, messageId, updateData)
 
-    if (result.matchedCount === 0) {
+    if (!success) {
+      console.log('❌ Message not found for PATCH:', { messageId, chatId })
       return NextResponse.json(
         { error: 'Message not found' },
         { status: 404 }
       )
     }
 
-    // Update chat's updatedAt timestamp
-    const chatCollection = await getChatCollection()
-    await chatCollection.updateOne(
-      { id: chatId },
-      { $set: { updatedAt: Date.now() } }
+    console.log('✅ Message updated via PATCH:', { messageId })
+
+    return NextResponse.json({ success: true, updated: updateData })
+
+  } catch (error) {
+    console.error('❌ Error in PATCH message:', error)
+    return NextResponse.json(
+      { error: 'Failed to update message' },
+      { status: 500 }
     )
+  }
+}
+
+// PUT - Update a specific message
+export async function PUT(request: NextRequest, context: any) {
+  try {
+    const { id: chatId, messageId } = context.params
+    const body = await request.json()
+    const { content, metadata } = body
+    
+    const updateData: any = {}
+    if (content !== undefined) updateData.content = content
+    if (metadata !== undefined) updateData.metadata = metadata
+
+    // Update message using OptimizedChatService
+    const success = await OptimizedChatService.updateMessage(chatId, messageId, updateData)
+
+    if (!success) {
+      return NextResponse.json(
+        { error: 'Message not found' },
+        { status: 404 }
+      )
+    }
 
     return NextResponse.json({ success: true })
 

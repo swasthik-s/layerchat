@@ -49,7 +49,8 @@ interface AppConfig {
   }
   redis: {
     url?: string
-    password?: string
+    upstashUrl?: string
+    upstashToken?: string
   }
 
   // Agents & Tools
@@ -244,7 +245,7 @@ export const config: AppConfig = {
 
   // Database
   mongodb: {
-    uri: getOptionalEnvVar('MONGODB_URI') || '',
+    uri: getRequiredEnvVar('MONGODB_URI'),
     db: getOptionalEnvVar('MONGODB_DB', 'layerchat') || 'layerchat',
     maxPoolSize: getNumberEnvVar('MONGODB_MAX_POOL_SIZE', 10),
     minPoolSize: getNumberEnvVar('MONGODB_MIN_POOL_SIZE', 5),
@@ -256,7 +257,8 @@ export const config: AppConfig = {
   },
   redis: {
     url: getOptionalEnvVar('REDIS_URL'),
-    password: getOptionalEnvVar('REDIS_PASSWORD'),
+    upstashUrl: getOptionalEnvVar('UPSTASH_REDIS_REST_URL'),
+    upstashToken: getOptionalEnvVar('UPSTASH_REDIS_REST_TOKEN'),
   },
 
   // Agents & Tools
@@ -384,10 +386,8 @@ export function validateConfig(): void {
   if (!config.nextAuthSecret) {
     errors.push('NEXTAUTH_SECRET is required')
   }
-  
-  // MongoDB is optional during build time, only warn in production
-  if (!config.mongodb.uri && process.env.NODE_ENV === 'production') {
-    console.warn('⚠️ MONGODB_URI not configured - MongoDB features will be disabled')
+  if (!config.mongodb.uri) {
+    errors.push('MONGODB_URI is required')
   }
 
   // Check if at least one AI provider is configured

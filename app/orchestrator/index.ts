@@ -2,8 +2,8 @@ import { AIModel, Agent, ChatMessage, OrchestratorConfig } from '@/types'
 import { GPT4Model, ClaudeModel, DallE3Model, GeminiModel, DynamicOpenAIModel, DynamicMistralModel, DynamicGoogleModel } from '@/models'
 import { SearchAgent, TimeAgent, YouTubeAgent, MathAgent, WeatherAgent } from '@/agents'
 import { AIGovernance, defaultGovernance } from '@/lib/governance'
-import { buildPersonaSystemPrompt, GLOBAL_FORMATTING_RULES, NATURAL_EXAMPLES } from '@/lib/systemPrompt'
-import { analyzeInteractionContext, generateNaturalGuidance } from '@/lib/styleAdaptive'
+import { buildPersonaSystemPrompt, GLOBAL_FORMATTING_RULES, FEW_SHOT_EXAMPLES } from '@/lib/systemPrompt'
+import { classifyPrompt, generateGreetingVariant, getConversationContext, generateResponseHints } from '@/lib/styleAdaptive'
 
 export class Orchestrator {
   private models: Map<string, AIModel> = new Map()
@@ -127,12 +127,11 @@ export class Orchestrator {
         maxTokens: settings?.maxTokens || 4000,
       }
       // Build dual system+user prompts and substitute enriched content as user body
-      const promptBundle = this.buildSystemUserPrompts(message.content, { dual: true, skipConciseForSearch: true })
+      const promptBundle = this.buildSystemUserPrompts(message.content, { dual: true })
       promptBundle.user = enrichedPrompt
       const modelResponse = await model.generate(promptBundle, options)
       const split = this.splitDualResponse(modelResponse.content as string)
       const enhanced = this.autoMathifyOutput(split.full)
-      
       return {
         id: `response-${Date.now()}`,
         role: 'assistant',
@@ -144,7 +143,6 @@ export class Orchestrator {
           agent: agentToUse.name,
           tokens: modelResponse.metadata?.tokens,
           agentData: agentResponse.data,
-          sources: this.extractSources(agentResponse.data),
           concise: split.concise,
           full: enhanced,
         explanationAvailable: !!split.concise && split.full !== split.concise && promptBundle.mode === 'DUAL',
@@ -238,7 +236,6 @@ export class Orchestrator {
           try {
             // Phase: Searching Web & Processing Data
             if (agentToUse.name === 'Internet Search') {
-              console.log('🔍 ORCHESTRATOR: Sending search_phase START event')
               controller.enqueue(
                 new TextEncoder().encode(
                   `data: ${JSON.stringify({ 
@@ -257,7 +254,6 @@ export class Orchestrator {
             
             // Mark search complete (for search agents)
             if (agentToUse.name === 'Internet Search') {
-              console.log('🔍 ORCHESTRATOR: Sending search_phase COMPLETE event')
               controller.enqueue(
                 new TextEncoder().encode(
                   `data: ${JSON.stringify({ 
@@ -272,7 +268,7 @@ export class Orchestrator {
             
             // Check if model supports streaming
             if (typeof (model as any).generateStream === 'function') {
-              const dualPrompts = orchestrator.buildSystemUserPrompts(message.content, { dual: true, skipConciseForSearch: true })
+              const dualPrompts = orchestrator.buildSystemUserPrompts(message.content, { dual: true })
               dualPrompts.user = enrichedPrompt
               const stream = await (model as any).generateStream(dualPrompts, options)
               
@@ -287,7 +283,7 @@ export class Orchestrator {
               controller.close()
             } else {
               // Non-streaming model fallback
-              const dualPrompts = orchestrator.buildSystemUserPrompts(message.content, { dual: true, skipConciseForSearch: true })
+              const dualPrompts = orchestrator.buildSystemUserPrompts(message.content, { dual: true })
               dualPrompts.user = enrichedPrompt
               const modelResponse = await (model as any).generate(dualPrompts, options)
               
@@ -299,8 +295,7 @@ export class Orchestrator {
                     metadata: {
                       model: model.name,
                       agent: agentToUse.name,
-                      agentData: agentResponse.data,
-                      sources: orchestrator.extractSources(agentResponse.data)
+                      agentData: agentResponse.data
                     }
                   })}\n\n`
                 )
@@ -364,33 +359,38 @@ export class Orchestrator {
   // (Deprecated) buildStylePrompt retained for backward compatibility but not used; dual formatting now enforced via buildSystemUserPrompts.
   private buildStylePrompt(userPrompt: string): string { return userPrompt }
 
-  // New helper: produce system + user prompts so models receive cleaner separation
-  private buildSystemUserPrompts(userPrompt: string, opts: { dual?: boolean; skipConciseForSearch?: boolean } = {}) {
+  // New helper: produce system + user prompts with smart context awareness
+  private buildSystemUserPrompts(userPrompt: string, opts: { dual?: boolean; conversationHistory?: ChatMessage[] } = {}) {
     const mode = this.decideOutputMode(userPrompt);
     const marker = 'STYLE_INSTRUCTIONS_V1';
     const procedural = this.isProceduralQuery(userPrompt);
   const stepLine = procedural ? 'Explain with clear numbered steps (Step 1, Step 2, ...).' : 'Provide a concise, well-structured explanation (avoid artificial step headings).';
     let outputSpec = '';
-    
-    // Force EXPLANATION_ONLY mode when dealing with internet search to avoid CONCISE tags
-    const finalMode = opts.skipConciseForSearch ? 'EXPLANATION_ONLY' : mode;
-    
-    if (finalMode === 'DUAL') {
+    if (mode === 'DUAL') {
       outputSpec = `OUTPUT FORMAT (MANDATORY):\n<CONCISE>Produce a single, self-contained natural sentence (or minimal expression when strictly numeric is best) that directly answers the user. Include necessary units/context. No filler preface.</CONCISE>\n<EXPLANATION>Provide a rich expansion WITHOUT copying the concise sentence verbatim as the first line. Include steps / reasoning, math ($...$ or $$...$$), structured sections, and end with a bold **Final Answer:** line.</EXPLANATION>\nAlways output BOTH tags exactly once.`;
-    } else if (finalMode === 'CONCISE_ONLY') {
+    } else if (mode === 'CONCISE_ONLY') {
       outputSpec = `OUTPUT FORMAT (MANDATORY):\n<CONCISE>Only a single natural sentence (or tight expression) with enough context to stand alone. No additional commentary. Output ONLY this tag and nothing else.</CONCISE>`;
-    } else if (finalMode === 'EXPLANATION_ONLY') {
+    } else if (mode === 'EXPLANATION_ONLY') {
       outputSpec = `OUTPUT FORMAT (MANDATORY): A direct, full explanation. Start with a 1-line bold summary (no <CONCISE> tag). Then detailed reasoning, and a bold **Final Answer:** line if applicable. Do NOT use <CONCISE> or <EXPLANATION> tags.`;
     }
+    // Smart adaptive hints based on context and conversation flow
+    const category = classifyPrompt(userPrompt);
+    const recentMessages = opts.conversationHistory?.slice(-3).map(m => m.content) || [];
+    const conversationContext = getConversationContext(recentMessages);
     
-    // Generate natural contextual guidance instead of rigid classification
-    const naturalGuidance = generateNaturalGuidance(userPrompt);
-    const contextualHint = `${naturalGuidance.guidance}\n${naturalGuidance.naturalFlow}`;
-    
-    const persona = buildPersonaSystemPrompt(contextualHint);
-    const styleSegment = `(${marker}) STYLE & OUTPUT RULES:\nOUTPUT_MODE: ${finalMode}\n${stepLine}\nUse LaTeX for ALL math expressions (inline $...$, display $$...$$). Show intermediate calculations only when helpful. Bold the final answer line beginning with 'Answer:' or 'Final Answer:' or 'Conclusion:'. Keep tone analytical yet approachable. Never output the final answer twice.\n${outputSpec}`.trim();
-    const system = `${persona}\n\n${GLOBAL_FORMATTING_RULES}\n${styleSegment}\n\n${NATURAL_EXAMPLES}`;
-    return { system, user: userPrompt, mode: finalMode };
+    let adaptiveHint = '';
+    if (category === 'greeting') {
+      const variant = generateGreetingVariant();
+      adaptiveHint = `ADAPTIVE_HINT: category=greeting, context=${conversationContext}\n${variant.hint}`;
+    } else {
+      // Use the smart response hints for all other categories
+      const responseHints = generateResponseHints(category, conversationContext);
+      adaptiveHint = `ADAPTIVE_HINT: category=${category}, context=${conversationContext} -> ${responseHints}`;
+    }
+    const persona = buildPersonaSystemPrompt(adaptiveHint);
+    const styleSegment = `(${marker}) STYLE & OUTPUT RULES:\nOUTPUT_MODE: ${mode}\n${stepLine}\nUse LaTeX for ALL math expressions (inline $...$, display $$...$$). Show intermediate calculations only when helpful. Bold the final answer line beginning with 'Answer:' or 'Final Answer:' or 'Conclusion:'. Keep tone analytical yet approachable. Never output the final answer twice.\n${outputSpec}`.trim();
+    const system = `${persona}\n\n${GLOBAL_FORMATTING_RULES}\n${styleSegment}\n\n${FEW_SHOT_EXAMPLES}`;
+    return { system, user: userPrompt, mode };
   }
 
   // Decide output mode dynamically
@@ -589,228 +589,58 @@ export class Orchestrator {
   private buildEnrichedPrompt(originalPrompt: string, agentResponse: any): string {
     const agentData = agentResponse.data
     
-    // Handle search fallback cases naturally
-    if (agentData.error === 'search_unavailable') {
-      return `User question: "${originalPrompt}"
+    let prompt = `The user asked: "${originalPrompt}"
 
-Context: ${agentData.fallbackResponse || "Internet search is currently unavailable, but I can help with information from my training data."}
+IMPORTANT: I have access to real-time information from internet search. I must use this current data to provide an accurate, up-to-date response. I should NOT say "I don't have access to real-time information" since I DO have current data below.
 
-Please answer the user's question using your existing knowledge. Be honest about any limitations regarding real-time information while still being as helpful as possible.`
-    }
-    
-    let prompt = `User question: "${originalPrompt}"
+CURRENT SEARCH RESULTS:\n\n`
 
-CURRENT WEB DATA (just retrieved):
-`
-
-    // Concise direct answer if available
-    if (agentData.answerBox?.answer) {
-      prompt += `Quick answer: ${agentData.answerBox.answer}\n\n`
+    // Handle enhanced search data
+    if (agentData.answerBox && agentData.answerBox.answer) {
+      prompt += `🎯 DIRECT ANSWER: ${agentData.answerBox.answer}\n\n`
     }
 
-    // Essential knowledge graph info
-    if (agentData.knowledgeGraph?.description) {
-      prompt += `Background: ${agentData.knowledgeGraph.description}\n\n`
+    if (agentData.knowledgeGraph && agentData.knowledgeGraph.description) {
+      prompt += `� KEY INFORMATION: ${agentData.knowledgeGraph.description}\n\n`
     }
 
-    // Detailed search results with comprehensive information
-    if (agentData.results?.length > 0) {
-      prompt += `Detailed search findings:\n\n`
-      
-      // Filter and use more results - different logic for news vs general search
-      const allResults = agentData.results || [];
-      const isNewsSearch = agentData.searchType === 'news';
-      
-      console.log(`📊 Processing ${isNewsSearch ? 'NEWS' : 'GENERAL'} search results: ${allResults.length} total`);
-      
-      let filteredResults;
-      
-      if (isNewsSearch) {
-        // News results are already high-quality articles, minimal filtering needed
-        filteredResults = allResults
-          .filter((result: any) => {
-            const snippet = result.snippet || '';
-            // Only filter out very low-quality results
-            return snippet.length > 30; // More lenient for news
-          })
-          .slice(0, 10); // More results for news (10 instead of 8)
-        
-        console.log(`📰 News search: Using ${filteredResults.length} news articles`);
-      } else {
-        // General search needs aggressive filtering for category pages
-        filteredResults = allResults
-          .filter((result: any) => {
-            const url = result.url || result.link || '';
-            const title = result.title || '';
-            const snippet = result.snippet || '';
-            
-            // Skip obvious category/tag/topic pages and low-quality sources
-            if (url.includes('/category/') || 
-                url.includes('/tag/') || 
-                url.includes('/topic/') ||
-                url.includes('/categories/') ||
-                url.includes('/tags/') ||
-                url.includes('/topics/') ||
-                url.endsWith('/') && url.split('/').length <= 4 || // Main domain pages
-                title.toLowerCase().includes('latest news') && !title.includes('|') ||
-                title.toLowerCase().includes('all articles') ||
-                title.toLowerCase().includes('breaking news') && snippet.length < 100 ||
-                snippet.length < 50 // Skip sources with very brief snippets
-            ) {
-              console.log(`🚫 Filtered out low-quality source: ${title} (${url})`);
-              return false;
-            }
-            
-            return true;
-          })
-          // Sort by content quality - prioritize longer, more detailed snippets
-          .sort((a: any, b: any) => {
-            const aSnippet = a.snippet || '';
-            const bSnippet = b.snippet || '';
-            const aHasDate = !!a.date;
-            const bHasDate = !!b.date;
-            
-            // Prefer sources with dates (recent articles)
-            if (aHasDate && !bHasDate) return -1;
-            if (!aHasDate && bHasDate) return 1;
-            
-            // Prefer longer, more detailed snippets
-            return bSnippet.length - aSnippet.length;
-          })
-          .slice(0, 8); // Standard limit for general search
-        
-        console.log(`� General search: ${allResults.length} total → ${filteredResults.length} quality sources selected`);
-      }
-      
-      filteredResults.forEach((result: any, index: number) => {
-        const sourceType = result.source ? `[${result.source}]` : '';
-        console.log(`✅ Quality source ${index + 1}: ${result.title} ${sourceType} (snippet: ${(result.snippet || '').length} chars)`);
-      });
-      
-      filteredResults.forEach((result: any, index: number) => {
-        prompt += `SOURCE ${index + 1}: ${result.title}\n`
-        prompt += `URL: ${result.url || result.link}\n`
-        prompt += `Content: ${result.snippet}\n`
-        if (result.date) prompt += `Published: ${result.date}\n`
-        if (result.position) prompt += `Search rank: #${result.position}\n`
-        
-        // Add additional content if available
-        if (result.content && result.content !== result.snippet) {
-          prompt += `Extended info: ${result.content.substring(0, 500)}${result.content.length > 500 ? '...' : ''}\n`
-        }
-        
-        prompt += `[Reference ID: source_${index + 1}]\n\n`
+    if (agentData.results && agentData.results.length > 0) {
+      prompt += `📰 LATEST SEARCH RESULTS (${agentData.totalResults || 'many'} total found):\n\n`
+      agentData.results.slice(0, 5).forEach((result: any, index: number) => {
+        prompt += `${index + 1}. **${result.title}**\n`
+        prompt += `   ${result.snippet}\n`
+        prompt += `   Source: ${result.url}\n`
+        if (result.date) prompt += `   Date: ${result.date}\n`
+        prompt += `\n`
       })
     }
 
-    prompt += `Instructions: You have real-time internet data above. Use it naturally to answer the user's question. Be conversational and helpful - no need to mention "search results" or be overly technical about the data source. 
+    if (agentData.sitelinks && agentData.sitelinks.length > 0) {
+      prompt += `🔗 ADDITIONAL RESOURCES:\n`
+      agentData.sitelinks.forEach((link: any, index: number) => {
+        prompt += `${index + 1}. ${link.title}: ${link.link}\n`
+      })
+      prompt += `\n`
+    }
 
-CRITICAL: Never wrap internet search information or responses containing search data in <CONCISE> tags or any other formatting tags. Internet search data should always be presented in full detail to provide comprehensive value to the user.
+    prompt += `INSTRUCTIONS:
+- ANALYZE and REASON about the search data before presenting your answer
+- Use the above current, real-time data to provide a well-structured, thoughtful response
+- Don't just copy-paste from search results - SYNTHESIZE the information intelligently
+- Be specific and include actual numbers, prices, dates, or facts from the search results
+- DO NOT say you don't have access to real-time information - you DO have it above
+- Explain WHY the information is relevant and HOW it answers the user's question
+- Present the information naturally and conversationally with proper context
+- Include relevant details from the search results but explain their significance
+- If the data includes prices, mention the current value and any trends if apparent
+- If multiple sources provide different information, acknowledge and explain the differences
+- Always provide a complete, helpful answer that demonstrates understanding of the search data
+- Structure your response logically: context → key findings → implications → conclusion
 
-IMPORTANT for source attribution - Use ChatGPT-style clean citations:
-- When referencing information, use clean, short domain/source names in links, NOT full article titles
-- Extract the domain name or publication name from the URL and use that as the link text
-- CRITICAL: Place citations at the END of sentences, right after the period
-- Examples of CORRECT citation placement:
-  • "Researchers at MIT have made a breakthrough using generative AI to design compounds that can combat drug-resistant bacteria. [MIT News](URL)"
-  • "New AI models are impacting European markets. [Reuters](URL)"
-  • "The technology shows promising results in clinical trials. [Nature](URL)"
-- Examples of good citation formats:
-  • [MIT News](https://news.mit.edu/...) 
-  • [TechCrunch](https://techcrunch.com/...)  
-  • [Reuters](https://reuters.com/...)
-  • [WSJ](https://wsj.com/...) for Wall Street Journal articles
-  • [BBC](https://bbc.com/...) for BBC articles
-- Keep citation text short and clean - just the publication name
-- Place citations naturally at the END of sentences where you use specific information
-- Don't over-cite - only cite when you're directly using information from a specific source
-
-Examples of the EXACT style to follow:
-"Researchers are making significant strides in using generative AI to design compounds that can combat drug-resistant bacteria. [MIT News](URL) This breakthrough could potentially revolutionize how we approach antibiotic-resistant infections."
-"There are also new methods being developed to test how well AI systems classify text. [MIT News](URL)"
-
-CRITICAL SOURCE SELECTION RULES:
-- ONLY cite sources that contain substantial, specific content and details about the topic
-- PRIORITIZE sources with detailed articles, research findings, specific data, or in-depth reporting
-- IGNORE and DO NOT CITE sources that are:
-  * Category pages (URLs containing /category/, /tag/, /topic/)
-  * Main domain pages without specific content
-  * Generic "Latest News" or "All Articles" pages
-  * Landing pages or navigation pages
-  * Sources with only brief snippets or generic descriptions
-- PREFER sources that offer:
-  * Specific research findings or data
-  * Detailed explanations or analysis
-  * Quotes from experts or officials
-  * Concrete examples or case studies
-  * Technical details or specifications
-- If a source only provides general information already covered by other sources, skip it
-- Only cite sources that add unique, valuable, and substantial information to your response
-
-When in doubt, ask yourself: "Does this source provide specific, detailed content that adds real value?" If not, don't cite it.
-
-Just incorporate the information smoothly into your response with natural, clean citations using publication names placed at the end of sentences.
-
-Timestamp: ${new Date().toLocaleString()}`
+Search was performed on: ${new Date().toLocaleString()}
+Data source: Real-time internet search via ${agentResponse.metadata?.source || 'search API'}`
 
     return prompt
-  }
-
-  /**
-   * Extract source information from agent data for source attribution
-   */
-  private extractSources(agentData: any): Array<{id: number, title: string, url: string, snippet: string, date?: string}> {
-    if (!agentData?.results) return []
-    
-    // Filter and prioritize results - same logic as in buildEnrichedPrompt
-    const results = agentData.results
-      .filter((result: any) => {
-        const url = result.url || result.link || '';
-        const title = result.title || '';
-        const snippet = result.snippet || '';
-        
-        // Skip obvious category/tag/topic pages and low-quality sources
-        if (url.includes('/category/') || 
-            url.includes('/tag/') || 
-            url.includes('/topic/') ||
-            url.includes('/categories/') ||
-            url.includes('/tags/') ||
-            url.includes('/topics/') ||
-            url.endsWith('/') && url.split('/').length <= 4 || // Main domain pages
-            title.toLowerCase().includes('latest news') && !title.includes('|') ||
-            title.toLowerCase().includes('all articles') ||
-            title.toLowerCase().includes('breaking news') && snippet.length < 100 ||
-            snippet.length < 50 // Skip sources with very brief snippets
-        ) {
-          return false;
-        }
-        
-        return true;
-      })
-      // Sort by content quality - prioritize longer, more detailed snippets
-      .sort((a: any, b: any) => {
-        const aSnippet = a.snippet || '';
-        const bSnippet = b.snippet || '';
-        const aHasDate = !!a.date;
-        const bHasDate = !!b.date;
-        
-        // Prefer sources with dates (recent articles)
-        if (aHasDate && !bHasDate) return -1;
-        if (!aHasDate && bHasDate) return 1;
-        
-        // Prefer longer, more detailed snippets
-        return bSnippet.length - aSnippet.length;
-      })
-      .slice(0, 8) // Increase from 5 to 8 to get more sources
-      .map((result: any, index: number) => ({
-        id: index + 1,
-        title: result.title || 'Untitled',
-        url: result.url || result.link || '#',
-        snippet: result.snippet || '',
-        date: result.date
-      }));
-    
-    return results;
   }
 
   getAvailableModels(): string[] {
